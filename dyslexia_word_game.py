@@ -412,39 +412,34 @@ def difficulty_menu():
                 screen = pygame.display.set_mode((WIDTH, HEIGHT), pygame.RESIZABLE)
                 mute_button.x = WIDTH - 140
 
-# --- HELP AI FUNCTION: 5 simple non-repeating hints, popup disappears after 5 seconds, shown below choices ---
-def ai_hint(word, used_hints=None):
+# --- ADAPTIVE HELP AI FUNCTION ---
+def ai_hint(word, attempts):
     """
-    Simple, child-friendly hints for children with dyslexia.
-    Uses 5 very clear hint types. Picks a new hint each time until all are used, then resets.
+    Adaptive, offline AI-like hint system:
+    - If the user tries once: general tip.
+    - If the user tries 2+ times: show first letter.
+    - If the user tries 3+ times: show first and last letter.
+    - If the user tries 4+ times: reveal one more hidden letter each time.
+    - All state is local and persistent for the word.
     """
-    hints = []
-    # 1. First letter
-    hints.append(f"The word starts with '{word[0].upper()}'.")
-    # 2. Last letter
-    hints.append(f"The word ends with '{word[-1].upper()}'.")
-    # 3. Number of syllables
-    syllables = sum(1 for c in word if c.lower() in "aeiou")
-    hints.append(f"The word has {syllables} syllable{'s' if syllables != 1 else ''}.")
-    # 4. Letter count
-    hints.append(f"The word has {len(word)} letters.")
-    # 5. Vowel in the middle (if there is one)
-    mid = len(word) // 2
-    if word[mid].lower() in "aeiou":
-        hints.append("The word has a vowel in the middle.")
+    if attempts <= 1:
+        return "Try sounding out each letter slowly."
+    if attempts == 2:
+        return f"The word starts with '{word[0].upper()}'."
+    if attempts == 3:
+        return f"The word starts with '{word[0].upper()}' and ends with '{word[-1].upper()}'."
+    reveal_count = min(attempts - 2, len(word) - 2)
+    revealed = list("_" * len(word))
+    revealed[0] = word[0]
+    revealed[-1] = word[-1]
+    letter_positions = [i for i in range(1, len(word)-1)]
+    for idx in range(min(reveal_count, len(letter_positions))):
+        revealed[letter_positions[idx]] = word[letter_positions[idx]]
+    reveal_str = " ".join(revealed)
+    if reveal_count < len(letter_positions):
+        return f"Here's a clue: {reveal_str}"
     else:
-        hints.append("Try to say each letter slowly.")
-    # Remove used hints, if provided
-    if used_hints is not None:
-        choices = [h for h in hints if h not in used_hints]
-        if not choices:  # If all have been shown, reset
-            used_hints.clear()
-            choices = hints
-        chosen = random.choice(choices)
-        used_hints.add(chosen)
-        return chosen
-    return random.choice(hints)
-# ------------------------------------------------------------------------------------
+        return f"The word is: {word}"
 
 def split_syllables(word):
     if word.lower() == "mouse":
@@ -548,17 +543,15 @@ def main(difficulty):
     FLASH_DURATION = 500
 
     syllable_hint = []
-    show_congrats = False  # New flag for showing congrats text
+    show_congrats = False
 
-    # --- For non-repeating Help AI hints ---
     ai_hint_shown = False
     ai_hint_text = ""
     ai_hint_time = 0
-    ai_used_hints = set()
 
     def load_word(index):
         nonlocal correct_word, hint, message, current_options, option_rects, hint_shown, syllable_hint, attempts
-        nonlocal ai_hint_shown, ai_hint_text, ai_hint_time, ai_used_hints
+        nonlocal ai_hint_shown, ai_hint_text, ai_hint_time
         current_data = words[difficulty][index]
         correct_word = current_data["word"]
         hint = current_data.get("hint", "")
@@ -569,7 +562,6 @@ def main(difficulty):
         ai_hint_shown = False
         ai_hint_text = ""
         ai_hint_time = 0
-        ai_used_hints = set()
         if difficulty == "easy" or difficulty == "hard":
             current_options = []
             option_rects = []
@@ -597,7 +589,7 @@ def main(difficulty):
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 x, y = event.pos
                 if back_button.collidepoint(x, y):
-                    play_bgm()  # Resume music when backing out of a game
+                    play_bgm()
                     running = False
                     return
                 if speak_button.collidepoint(x, y):
@@ -630,7 +622,7 @@ def main(difficulty):
                     message = "Listen carefully to syllables!"
                     hint_shown = True
                 if ai_hint_button.collidepoint(x, y):
-                    ai_hint_text = ai_hint(correct_word, used_hints=ai_used_hints)
+                    ai_hint_text = ai_hint(correct_word, attempts)
                     ai_hint_shown = True
                     ai_hint_time = time.time()
                 if difficulty == "medium":
@@ -689,11 +681,11 @@ def main(difficulty):
             pygame.draw.rect(screen, GREEN, mic_button)
             draw_text("Mic", FONT_SMALL, WHITE, mic_button.centerx, mic_button.centery)
         pygame.draw.rect(screen, PURPLE, help_button)
-        draw_text("Help", FONT_SMALL, WHITE, help_button.centerx, help_button.centery)
+        draw_text("Help AI", FONT_SMALL, WHITE, help_button.centerx, help_button.centery)
         pygame.draw.rect(screen, YELLOW, ai_hint_button)
-        draw_text("Help AI", FONT_SMALL, BLACK, ai_hint_button.centerx, ai_hint_button.centery)
+        draw_text("Help AI+", FONT_SMALL, BLACK, ai_hint_button.centerx, ai_hint_button.centery)
 
-        # --- Show Help AI popup below choices, disappears after 5 seconds, not repeated until all are shown ---
+        # --- Show Help AI+ popup below choices, disappears after 5 seconds ---
         if difficulty == "medium" and option_rects:
             last_rect = option_rects[-1]
             popup_y = last_rect.bottom + 20
