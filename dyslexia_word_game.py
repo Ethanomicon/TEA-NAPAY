@@ -7,6 +7,7 @@ import os
 import re
 import sys
 import time
+import difflib
 
 pygame.init()
 
@@ -339,6 +340,7 @@ def menu():
         draw_text("Achievements", FONT_SMALL, WHITE, achievements_btn.centerx, achievements_btn.centery)
         draw_text("Database", FONT_SMALL, WHITE, database_btn.centerx, database_btn.centery)
         draw_text("Quit", FONT_SMALL, WHITE, quit_btn.centerx, quit_btn.centery)
+        # Add the group/version text centered at the bottom
         draw_text(
             "Created by Nabus et al. - Alpha Version - 2025",
             FONT_SMALL, BLACK, WIDTH // 2, HEIGHT - 35
@@ -412,35 +414,6 @@ def difficulty_menu():
                 screen = pygame.display.set_mode((WIDTH, HEIGHT), pygame.RESIZABLE)
                 mute_button.x = WIDTH - 140
 
-# --- ADAPTIVE HELP AI FUNCTION ---
-def ai_hint(word, attempts):
-    """
-    Adaptive, offline AI-like hint system:
-    - If the user tries once: general tip.
-    - If the user tries 2+ times: show first letter.
-    - If the user tries 3+ times: show first and last letter.
-    - If the user tries 4+ times: reveal one more hidden letter each time.
-    - All state is local and persistent for the word.
-    """
-    if attempts <= 1:
-        return "Try sounding out each letter slowly."
-    if attempts == 2:
-        return f"The word starts with '{word[0].upper()}'."
-    if attempts == 3:
-        return f"The word starts with '{word[0].upper()}' and ends with '{word[-1].upper()}'."
-    reveal_count = min(attempts - 2, len(word) - 2)
-    revealed = list("_" * len(word))
-    revealed[0] = word[0]
-    revealed[-1] = word[-1]
-    letter_positions = [i for i in range(1, len(word)-1)]
-    for idx in range(min(reveal_count, len(letter_positions))):
-        revealed[letter_positions[idx]] = word[letter_positions[idx]]
-    reveal_str = " ".join(revealed)
-    if reveal_count < len(letter_positions):
-        return f"Here's a clue: {reveal_str}"
-    else:
-        return f"The word is: {word}"
-
 def split_syllables(word):
     if word.lower() == "mouse":
         return ["mouse"]
@@ -512,6 +485,39 @@ def speak_syllables_medium(word):
         tts_engine.runAndWait()
         time.sleep(0.3)
 
+def get_phonetic_feedback(target, attempt):
+    # Give local, kid-friendly, phonetic feedback for dyslexia
+    if not attempt or attempt.strip() == "":
+        return "I didn't hear anything. Let's try again together!"
+    elif attempt.lower() == target.lower():
+        return "Awesome! You said it perfectly!"
+    ratio = difflib.SequenceMatcher(None, target.lower(), attempt.lower()).ratio()
+    if ratio > 0.8:
+        return "Great job! That was very close. Try saying each part slowly."
+    elif ratio > 0.5:
+        diffs = []
+        sm = difflib.ndiff(target.lower(), attempt.lower())
+        for s in sm:
+            if s.startswith('-'):
+                diffs.append(f"missing '{s[-1]}'")
+            elif s.startswith('+'):
+                diffs.append(f"extra '{s[-1]}'")
+        hint = " and ".join(diffs) if diffs else "a small mistake"
+        return f"Good try! You made {hint}. Let's listen and try again."
+    else:
+        return "That's a good try. Let's break the word down and practice together!"
+
+def syllable_feedback(word):
+    # Repeat the word syllable by syllable for practice, using phonetic mapping
+    sylls = split_syllables(word)
+    for syl in sylls:
+        to_speak = phonetic_map.get(syl.lower(), syl)
+        tts_engine.say(to_speak)
+        tts_engine.runAndWait()
+        time.sleep(0.4)
+    tts_engine.say(word)
+    tts_engine.runAndWait()
+
 def main(difficulty):
     global screen, WIDTH, HEIGHT
     running = True
@@ -526,9 +532,10 @@ def main(difficulty):
     hint = ""
 
     back_button = pygame.Rect(20, 20, 100, 40)
+
     speak_button = pygame.Rect(WIDTH - 140, 20, 120, 40)
     help_button = pygame.Rect(WIDTH - 140, 140, 120, 40)
-    ai_hint_button = pygame.Rect(WIDTH - 140, 200, 120, 40)
+    ai_button = pygame.Rect(WIDTH - 140, 200, 120, 40)
 
     use_mic = (difficulty == "easy" or difficulty == "hard")
     if use_mic:
@@ -543,15 +550,15 @@ def main(difficulty):
     FLASH_DURATION = 500
 
     syllable_hint = []
-    show_congrats = False
+    show_congrats = False  # New flag for showing congrats text
 
-    ai_hint_shown = False
-    ai_hint_text = ""
-    ai_hint_time = 0
+    ai_feedback = ""
+    ai_feedback_time = 0
+    AI_FEEDBACK_DURATION = 8  # seconds
 
     def load_word(index):
         nonlocal correct_word, hint, message, current_options, option_rects, hint_shown, syllable_hint, attempts
-        nonlocal ai_hint_shown, ai_hint_text, ai_hint_time
+        nonlocal ai_feedback, ai_feedback_time
         current_data = words[difficulty][index]
         correct_word = current_data["word"]
         hint = current_data.get("hint", "")
@@ -559,9 +566,8 @@ def main(difficulty):
         hint_shown = False
         attempts = attempts_db.get(difficulty, {}).get(correct_word, 0)
         syllable_hint = split_syllables(correct_word)
-        ai_hint_shown = False
-        ai_hint_text = ""
-        ai_hint_time = 0
+        ai_feedback = ""
+        ai_feedback_time = 0
         if difficulty == "easy" or difficulty == "hard":
             current_options = []
             option_rects = []
@@ -583,13 +589,13 @@ def main(difficulty):
                 screen = pygame.display.set_mode((WIDTH, HEIGHT), pygame.RESIZABLE)
                 speak_button.x = WIDTH - 140
                 help_button.x = WIDTH - 140
-                ai_hint_button.x = WIDTH - 140
+                ai_button.x = WIDTH - 140
                 if use_mic:
                     mic_button.x = WIDTH - 140
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 x, y = event.pos
                 if back_button.collidepoint(x, y):
-                    play_bgm()
+                    play_bgm()  # Resume music when backing out of a game
                     running = False
                     return
                 if speak_button.collidepoint(x, y):
@@ -621,10 +627,15 @@ def main(difficulty):
                     speak_syllables(correct_word)
                     message = "Listen carefully to syllables!"
                     hint_shown = True
-                if ai_hint_button.collidepoint(x, y):
-                    ai_hint_text = ai_hint(correct_word, attempts)
-                    ai_hint_shown = True
-                    ai_hint_time = time.time()
+                if ai_button.collidepoint(x, y):
+                    # Use last attempt or ask for a new one
+                    user_speech = recognize_speech()
+                    ai_feedback = get_phonetic_feedback(correct_word, user_speech)
+                    ai_feedback_time = time.time()
+                    tts_engine.say(ai_feedback)
+                    tts_engine.runAndWait()
+                    syllable_feedback(correct_word)
+                    message = "AI feedback below."
                 if difficulty == "medium":
                     for idx, rect in enumerate(option_rects):
                         if rect.collidepoint(x, y):
@@ -682,26 +693,8 @@ def main(difficulty):
             draw_text("Mic", FONT_SMALL, WHITE, mic_button.centerx, mic_button.centery)
         pygame.draw.rect(screen, PURPLE, help_button)
         draw_text("Help AI", FONT_SMALL, WHITE, help_button.centerx, help_button.centery)
-        pygame.draw.rect(screen, YELLOW, ai_hint_button)
-        draw_text("Help AI+", FONT_SMALL, BLACK, ai_hint_button.centerx, ai_hint_button.centery)
-
-        # --- Show Help AI+ popup below choices, disappears after 5 seconds ---
-        if difficulty == "medium" and option_rects:
-            last_rect = option_rects[-1]
-            popup_y = last_rect.bottom + 20
-        else:
-            popup_y = HEIGHT // 2 + 120
-        popup_width = 500
-        popup_height = 60
-        popup_x = WIDTH // 2 - popup_width // 2
-
-        if ai_hint_shown and (time.time() - ai_hint_time < 5):
-            pygame.draw.rect(screen, (255, 255, 180), (popup_x, popup_y, popup_width, popup_height))
-            draw_text(ai_hint_text, FONT_HINT, (0, 0, 0), WIDTH // 2, popup_y + popup_height // 2)
-        elif ai_hint_shown:
-            ai_hint_shown = False
-            ai_hint_text = ""
-
+        pygame.draw.rect(screen, YELLOW, ai_button)
+        draw_text("AI Assist", FONT_SMALL, BLACK, ai_button.centerx, ai_button.centery)
         if show_congrats:
             draw_text("Congratulations! You finished this level. Excellent job!", FONT_LARGE, GREEN, WIDTH // 2, HEIGHT // 2 - 40)
             draw_text("Always remember that practice makes perfect.", FONT_LARGE, GREEN, WIDTH // 2, HEIGHT // 2 + 40)
@@ -719,6 +712,15 @@ def main(difficulty):
             draw_text(f"Syllable/s: {syllable_text}", FONT_HINT, BLACK, WIDTH // 2, HEIGHT - 50)
             if hint:
                 draw_text(f"Hint: {hint}", FONT_HINT, BLACK, WIDTH // 2, HEIGHT - 30)
+        # Show AI feedback popup for a few seconds if available
+        if ai_feedback and (time.time() - ai_feedback_time) < AI_FEEDBACK_DURATION:
+            popup_width = WIDTH - 120
+            popup_height = 80
+            popup_x = 60
+            popup_y = HEIGHT - popup_height - 130
+            pygame.draw.rect(screen, (240, 246, 255), (popup_x, popup_y, popup_width, popup_height))
+            draw_text("AI Feedback:", FONT_SMALL, (70, 70, 70), popup_x + 10, popup_y + 18, center=False)
+            draw_text(ai_feedback, FONT_HINT, (0, 0, 0), popup_x + 10, popup_y + popup_height // 2 + 5, center=False)
         if flash_index is not None:
             current_time = pygame.time.get_ticks()
             if current_time - flash_start_time > FLASH_DURATION:
