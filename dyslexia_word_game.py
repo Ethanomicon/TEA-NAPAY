@@ -635,7 +635,7 @@ def main(difficulty):
                     tts_engine.say(ai_feedback)
                     tts_engine.runAndWait()
                     syllable_feedback(correct_word)
-                    message = "AI feedback below."
+                    message = ai_feedback
                 if difficulty == "medium":
                     for idx, rect in enumerate(option_rects):
                         if rect.collidepoint(x, y):
@@ -692,7 +692,7 @@ def main(difficulty):
             pygame.draw.rect(screen, GREEN, mic_button)
             draw_text("Mic", FONT_SMALL, WHITE, mic_button.centerx, mic_button.centery)
         pygame.draw.rect(screen, PURPLE, help_button)
-        draw_text("Help AI", FONT_SMALL, WHITE, help_button.centerx, help_button.centery)
+        draw_text("AI Help", FONT_SMALL, WHITE, help_button.centerx, help_button.centery)  # <--- changed here
         pygame.draw.rect(screen, YELLOW, ai_button)
         draw_text("AI Assist", FONT_SMALL, BLACK, ai_button.centerx, ai_button.centery)
         if show_congrats:
