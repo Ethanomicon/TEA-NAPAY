@@ -412,11 +412,11 @@ def difficulty_menu():
                 screen = pygame.display.set_mode((WIDTH, HEIGHT), pygame.RESIZABLE)
                 mute_button.x = WIDTH - 140
 
-# --- SMART AI-LIKE HINT FUNCTION ---
-def ai_hint(word, hint, level):
+# --- HELP AI FUNCTION: 5 simple non-repeating hints, popup disappears after 5 seconds, shown below choices ---
+def ai_hint(word, used_hints=None):
     """
     Simple, child-friendly hints for children with dyslexia.
-    Uses 5 very clear hint types. No masked word.
+    Uses 5 very clear hint types. Picks a new hint each time until all are used, then resets.
     """
     hints = []
     # 1. First letter
@@ -433,10 +433,18 @@ def ai_hint(word, hint, level):
     if word[mid].lower() in "aeiou":
         hints.append("The word has a vowel in the middle.")
     else:
-        # If no vowel in the middle letter, pick another supportive hint
         hints.append("Try to say each letter slowly.")
+    # Remove used hints, if provided
+    if used_hints is not None:
+        choices = [h for h in hints if h not in used_hints]
+        if not choices:  # If all have been shown, reset
+            used_hints.clear()
+            choices = hints
+        chosen = random.choice(choices)
+        used_hints.add(chosen)
+        return chosen
     return random.choice(hints)
-# -----------------------------------
+# ------------------------------------------------------------------------------------
 
 def split_syllables(word):
     if word.lower() == "mouse":
@@ -515,8 +523,6 @@ def main(difficulty):
     current_word_index = 0
     message = ""
     hint_shown = False
-    ai_hint_shown = False
-    ai_hint_text = ""
     attempts = 0
 
     option_rects = []
@@ -544,17 +550,26 @@ def main(difficulty):
     syllable_hint = []
     show_congrats = False  # New flag for showing congrats text
 
+    # --- For non-repeating Help AI hints ---
+    ai_hint_shown = False
+    ai_hint_text = ""
+    ai_hint_time = 0
+    ai_used_hints = set()
+
     def load_word(index):
-        nonlocal correct_word, hint, message, current_options, option_rects, hint_shown, syllable_hint, attempts, ai_hint_shown, ai_hint_text
+        nonlocal correct_word, hint, message, current_options, option_rects, hint_shown, syllable_hint, attempts
+        nonlocal ai_hint_shown, ai_hint_text, ai_hint_time, ai_used_hints
         current_data = words[difficulty][index]
         correct_word = current_data["word"]
         hint = current_data.get("hint", "")
         message = ""
         hint_shown = False
-        ai_hint_shown = False
-        ai_hint_text = ""
         attempts = attempts_db.get(difficulty, {}).get(correct_word, 0)
         syllable_hint = split_syllables(correct_word)
+        ai_hint_shown = False
+        ai_hint_text = ""
+        ai_hint_time = 0
+        ai_used_hints = set()
         if difficulty == "easy" or difficulty == "hard":
             current_options = []
             option_rects = []
@@ -615,8 +630,9 @@ def main(difficulty):
                     message = "Listen carefully to syllables!"
                     hint_shown = True
                 if ai_hint_button.collidepoint(x, y):
-                    ai_hint_text = ai_hint(correct_word, hint, difficulty)
+                    ai_hint_text = ai_hint(correct_word, used_hints=ai_used_hints)
                     ai_hint_shown = True
+                    ai_hint_time = time.time()
                 if difficulty == "medium":
                     for idx, rect in enumerate(option_rects):
                         if rect.collidepoint(x, y):
@@ -676,9 +692,24 @@ def main(difficulty):
         draw_text("Help", FONT_SMALL, WHITE, help_button.centerx, help_button.centery)
         pygame.draw.rect(screen, YELLOW, ai_hint_button)
         draw_text("Help AI", FONT_SMALL, BLACK, ai_hint_button.centerx, ai_hint_button.centery)
-        if ai_hint_shown:
-            pygame.draw.rect(screen, (255, 255, 180), (WIDTH // 2 - 250, HEIGHT // 2 + 120, 500, 80))
-            draw_text(ai_hint_text, FONT_HINT, (0, 0, 0), WIDTH // 2, HEIGHT // 2 + 160)
+
+        # --- Show Help AI popup below choices, disappears after 5 seconds, not repeated until all are shown ---
+        if difficulty == "medium" and option_rects:
+            last_rect = option_rects[-1]
+            popup_y = last_rect.bottom + 20
+        else:
+            popup_y = HEIGHT // 2 + 120
+        popup_width = 500
+        popup_height = 60
+        popup_x = WIDTH // 2 - popup_width // 2
+
+        if ai_hint_shown and (time.time() - ai_hint_time < 5):
+            pygame.draw.rect(screen, (255, 255, 180), (popup_x, popup_y, popup_width, popup_height))
+            draw_text(ai_hint_text, FONT_HINT, (0, 0, 0), WIDTH // 2, popup_y + popup_height // 2)
+        elif ai_hint_shown:
+            ai_hint_shown = False
+            ai_hint_text = ""
+
         if show_congrats:
             draw_text("Congratulations! You finished this level. Excellent job!", FONT_LARGE, GREEN, WIDTH // 2, HEIGHT // 2 - 40)
             draw_text("Always remember that practice makes perfect.", FONT_LARGE, GREEN, WIDTH // 2, HEIGHT // 2 + 40)
