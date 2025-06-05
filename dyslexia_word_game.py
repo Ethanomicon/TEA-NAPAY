@@ -10,7 +10,6 @@ import time
 
 pygame.init()
 
-
 # --- BACKGROUND MUSIC SETUP ---
 BACKGROUND_MUSIC_FILE = "bgm.ogg"  # Put your music file in the same folder
 bgm_muted = False  # Global mute status (False: play music, True: mute music)
@@ -51,6 +50,7 @@ GREEN = (34, 139, 34)
 RED = (255, 69, 0)
 GRAY = (200, 200, 200)
 PURPLE = (128, 0, 128)
+YELLOW = (255, 215, 0)
 
 # Text-to-speech engine
 tts_engine = pyttsx3.init()
@@ -339,7 +339,6 @@ def menu():
         draw_text("Achievements", FONT_SMALL, WHITE, achievements_btn.centerx, achievements_btn.centery)
         draw_text("Database", FONT_SMALL, WHITE, database_btn.centerx, database_btn.centery)
         draw_text("Quit", FONT_SMALL, WHITE, quit_btn.centerx, quit_btn.centery)
-        # Add the group/version text centered at the bottom
         draw_text(
             "Created by Nabus et al. - Alpha Version - 2025",
             FONT_SMALL, BLACK, WIDTH // 2, HEIGHT - 35
@@ -413,12 +412,31 @@ def difficulty_menu():
                 screen = pygame.display.set_mode((WIDTH, HEIGHT), pygame.RESIZABLE)
                 mute_button.x = WIDTH - 140
 
-# ... rest of your code (main, split_syllables, etc.) unchanged ...
-# Only add the mute button in menus and call set_bgm_mute when toggling mute.
-
-# The rest of your code should work as before (main, split_syllables, etc.)
-
-# (You can copy over the rest of your functions unchanged from previous full files.)
+# --- SMART AI-LIKE HINT FUNCTION ---
+def ai_hint(word, hint, level):
+    """
+    Simple, child-friendly hints for children with dyslexia.
+    Uses 5 very clear hint types. No masked word.
+    """
+    hints = []
+    # 1. First letter
+    hints.append(f"The word starts with '{word[0].upper()}'.")
+    # 2. Last letter
+    hints.append(f"The word ends with '{word[-1].upper()}'.")
+    # 3. Number of syllables
+    syllables = sum(1 for c in word if c.lower() in "aeiou")
+    hints.append(f"The word has {syllables} syllable{'s' if syllables != 1 else ''}.")
+    # 4. Letter count
+    hints.append(f"The word has {len(word)} letters.")
+    # 5. Vowel in the middle (if there is one)
+    mid = len(word) // 2
+    if word[mid].lower() in "aeiou":
+        hints.append("The word has a vowel in the middle.")
+    else:
+        # If no vowel in the middle letter, pick another supportive hint
+        hints.append("Try to say each letter slowly.")
+    return random.choice(hints)
+# -----------------------------------
 
 def split_syllables(word):
     if word.lower() == "mouse":
@@ -497,6 +515,8 @@ def main(difficulty):
     current_word_index = 0
     message = ""
     hint_shown = False
+    ai_hint_shown = False
+    ai_hint_text = ""
     attempts = 0
 
     option_rects = []
@@ -505,9 +525,9 @@ def main(difficulty):
     hint = ""
 
     back_button = pygame.Rect(20, 20, 100, 40)
-
     speak_button = pygame.Rect(WIDTH - 140, 20, 120, 40)
     help_button = pygame.Rect(WIDTH - 140, 140, 120, 40)
+    ai_hint_button = pygame.Rect(WIDTH - 140, 200, 120, 40)
 
     use_mic = (difficulty == "easy" or difficulty == "hard")
     if use_mic:
@@ -525,12 +545,14 @@ def main(difficulty):
     show_congrats = False  # New flag for showing congrats text
 
     def load_word(index):
-        nonlocal correct_word, hint, message, current_options, option_rects, hint_shown, syllable_hint, attempts
+        nonlocal correct_word, hint, message, current_options, option_rects, hint_shown, syllable_hint, attempts, ai_hint_shown, ai_hint_text
         current_data = words[difficulty][index]
         correct_word = current_data["word"]
         hint = current_data.get("hint", "")
         message = ""
         hint_shown = False
+        ai_hint_shown = False
+        ai_hint_text = ""
         attempts = attempts_db.get(difficulty, {}).get(correct_word, 0)
         syllable_hint = split_syllables(correct_word)
         if difficulty == "easy" or difficulty == "hard":
@@ -554,6 +576,7 @@ def main(difficulty):
                 screen = pygame.display.set_mode((WIDTH, HEIGHT), pygame.RESIZABLE)
                 speak_button.x = WIDTH - 140
                 help_button.x = WIDTH - 140
+                ai_hint_button.x = WIDTH - 140
                 if use_mic:
                     mic_button.x = WIDTH - 140
             elif event.type == pygame.MOUSEBUTTONDOWN:
@@ -591,6 +614,9 @@ def main(difficulty):
                     speak_syllables(correct_word)
                     message = "Listen carefully to syllables!"
                     hint_shown = True
+                if ai_hint_button.collidepoint(x, y):
+                    ai_hint_text = ai_hint(correct_word, hint, difficulty)
+                    ai_hint_shown = True
                 if difficulty == "medium":
                     for idx, rect in enumerate(option_rects):
                         if rect.collidepoint(x, y):
@@ -647,7 +673,12 @@ def main(difficulty):
             pygame.draw.rect(screen, GREEN, mic_button)
             draw_text("Mic", FONT_SMALL, WHITE, mic_button.centerx, mic_button.centery)
         pygame.draw.rect(screen, PURPLE, help_button)
-        draw_text("Help AI", FONT_SMALL, WHITE, help_button.centerx, help_button.centery)
+        draw_text("Help", FONT_SMALL, WHITE, help_button.centerx, help_button.centery)
+        pygame.draw.rect(screen, YELLOW, ai_hint_button)
+        draw_text("Help AI", FONT_SMALL, BLACK, ai_hint_button.centerx, ai_hint_button.centery)
+        if ai_hint_shown:
+            pygame.draw.rect(screen, (255, 255, 180), (WIDTH // 2 - 250, HEIGHT // 2 + 120, 500, 80))
+            draw_text(ai_hint_text, FONT_HINT, (0, 0, 0), WIDTH // 2, HEIGHT // 2 + 160)
         if show_congrats:
             draw_text("Congratulations! You finished this level. Excellent job!", FONT_LARGE, GREEN, WIDTH // 2, HEIGHT // 2 - 40)
             draw_text("Always remember that practice makes perfect.", FONT_LARGE, GREEN, WIDTH // 2, HEIGHT // 2 + 40)
