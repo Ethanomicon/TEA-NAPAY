@@ -145,13 +145,14 @@ words = {
         {"word": "garden", "options": ["guard", "gear", "garden", "golden"], "hint": "It shows love."}
     ],
     "hard": [
-        {"word": "scissor", "hint": "A thing used to cut paper."},
-        {"word": "chocolate", "hint": "Sweet brown treat."},
-        {"word": "butterfly", "hint": "An insect with colorful wings."},
-        {"word": "island", "hint": "Piece of land surrounded by water."},
-        {"word": "sign", "hint": "a gesture or action used to convey something."}
+        {"word": "scissor"},
+        {"word": "chocolate"},
+        {"word": "butterfly"},
+        {"word": "island"},
+        {"word": "sign"}
     ]
 }
+
 
 SAVE_FILE = "progress.json"
 ATTEMPTS_FILE = "attempts.json"
@@ -531,6 +532,7 @@ def main(difficulty):
     message = ""
     message_color = BLACK
     hint_shown = False
+    ai_hint_display = False  # <-- New flag: display hint after AI Assist
     attempts = 0
 
     option_rects = []
@@ -562,18 +564,17 @@ def main(difficulty):
     ai_feedback = ""
     ai_feedback_time = 0
     AI_FEEDBACK_DURATION = 8  # seconds
-    ai_show_syllable = False  # <-- NEW FLAG
 
     def load_word(index):
-        nonlocal correct_word, hint, message, message_color, current_options, option_rects, hint_shown, syllable_hint, attempts
-        nonlocal ai_feedback, ai_feedback_time, ai_show_syllable
+        nonlocal correct_word, hint, message, message_color, current_options, option_rects, hint_shown, syllable_hint, attempts, ai_hint_display
+        nonlocal ai_feedback, ai_feedback_time
         current_data = words[difficulty][index]
         correct_word = current_data["word"]
         hint = current_data.get("hint", "")
         message = ""
         message_color = BLACK
         hint_shown = False
-        ai_show_syllable = False
+        ai_hint_display = False  # <-- Reset AI assist hint flag
         attempts = attempts_db.get(difficulty, {}).get(correct_word, 0)
         syllable_hint = split_syllables(correct_word)
         ai_feedback = ""
@@ -647,9 +648,10 @@ def main(difficulty):
                     tts_engine.say(ai_feedback)
                     tts_engine.runAndWait()
                     syllable_feedback(correct_word)
+                    # Always show the feedback text as the main message, for all levels
                     message = ai_feedback
                     message_color = get_feedback_color(ai_feedback)
-                    ai_show_syllable = True  # <-- SET FLAG to display syllables after AI Assist
+                    ai_hint_display = True  # <-- Show hint after AI Assist
                 if difficulty == "medium":
                     for idx, rect in enumerate(option_rects):
                         if rect.collidepoint(x, y):
@@ -688,8 +690,7 @@ def main(difficulty):
         option_rects.clear()
         if difficulty == "medium":
             spacing = HEIGHT // 10
-            offset_down = HEIGHT // 10
-            start_y = HEIGHT // 2 - len(current_options) * spacing // 2 + offset_down
+            start_y = HEIGHT // 2 - len(current_options) * spacing // 2
             for i, option in enumerate(current_options):
                 x_opt = WIDTH // 2
                 y_opt = start_y + i * spacing
@@ -718,8 +719,8 @@ def main(difficulty):
         else:
             draw_text(message, FONT_SMALL, message_color, WIDTH // 2, HEIGHT - 80)
         draw_text(f"Attempts: {attempts}", FONT_SMALL, BLACK, 80, HEIGHT - 120, center=False)
-        # Always show syllables if help or AI Assist was used
-        if hint_shown or ai_show_syllable:
+        # Show hint if hint_shown or after AI Assist
+        if hint_shown or ai_hint_display:
             syllable_text = " - ".join(syllable_hint)
             draw_text(f"Syllable/s: {syllable_text}", FONT_HINT, BLACK, WIDTH // 2, HEIGHT - 50)
             if hint:
