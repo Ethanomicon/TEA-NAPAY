@@ -39,7 +39,7 @@ def set_bgm_mute(mute):
 # --------------------------------
 
 # Window settings
-WIDTH, HEIGHT = 800, 600
+WIDTH, HEIGHT = 800, 480  # Changed for Raspberry Pi touch display (800x480)
 screen = pygame.display.set_mode((WIDTH, HEIGHT), pygame.RESIZABLE)
 pygame.display.set_caption("LexisPlay: Word Learning Game")
 
@@ -486,7 +486,6 @@ def speak_syllables_medium(word):
         time.sleep(0.3)
 
 def get_phonetic_feedback(target, attempt):
-    # Give local, kid-friendly, phonetic feedback for dyslexia
     if not attempt or attempt.strip() == "":
         return "I didn't hear anything. Let's try again together!"
     elif attempt.lower() == target.lower():
@@ -500,7 +499,6 @@ def get_phonetic_feedback(target, attempt):
         return "I didn't hear anything. Let's try again together!"
 
 def syllable_feedback(word):
-    # Repeat the word syllable by syllable for practice, using phonetic mapping
     sylls = split_syllables(word)
     for syl in sylls:
         to_speak = phonetic_map.get(syl.lower(), syl)
@@ -511,18 +509,16 @@ def syllable_feedback(word):
     tts_engine.runAndWait()
 
 def get_feedback_color(feedback):
-    """Return color tuple for ai_feedback string."""
     if "perfect" in feedback.lower() or "awesome" in feedback.lower():
-        return (34, 139, 34)  # GREEN
-    # Change "almost correct" from yellow to orange
+        return (34, 139, 34)
     elif "very close" in feedback.lower() or "great job" in feedback.lower():
-        return (255, 140, 0)  # ORANGE (was YELLOW)
+        return (255, 140, 0)
     elif "good try" in feedback.lower() or "let's break the word" in feedback.lower():
-        return (255, 69, 0)   # RED
+        return (255, 69, 0)
     elif "didn't hear anything" in feedback.lower():
-        return (255, 69, 0)   # RED
+        return (255, 69, 0)
     else:
-        return (0, 0, 0)      # BLACK (default)
+        return (0, 0, 0)
 
 def main(difficulty):
     global screen, WIDTH, HEIGHT
@@ -557,11 +553,11 @@ def main(difficulty):
     FLASH_DURATION = 500
 
     syllable_hint = []
-    show_congrats = False  # New flag for showing congrats text
+    show_congrats = False
 
     ai_feedback = ""
     ai_feedback_time = 0
-    AI_FEEDBACK_DURATION = 8  # seconds
+    AI_FEEDBACK_DURATION = 8
 
     def load_word(index):
         nonlocal correct_word, hint, message, message_color, current_options, option_rects, hint_shown, syllable_hint, attempts
@@ -603,7 +599,7 @@ def main(difficulty):
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 x, y = event.pos
                 if back_button.collidepoint(x, y):
-                    play_bgm()  # Resume music when backing out of a game
+                    play_bgm()
                     running = False
                     return
                 if speak_button.collidepoint(x, y):
@@ -645,7 +641,6 @@ def main(difficulty):
                     tts_engine.say(ai_feedback)
                     tts_engine.runAndWait()
                     syllable_feedback(correct_word)
-                    # Always show the feedback text as the main message, for all levels
                     message = ai_feedback
                     message_color = get_feedback_color(ai_feedback)
                 if difficulty == "medium":
@@ -685,12 +680,14 @@ def main(difficulty):
         draw_text(correct_word, FONT_LARGE, BLUE, WIDTH // 2, HEIGHT // 3)
         option_rects.clear()
         if difficulty == "medium":
-            spacing = HEIGHT // 10
-            start_y = HEIGHT // 2 - len(current_options) * spacing // 2
+            spacing = HEIGHT // 13
+            box_height = 38
+            box_width = 170
+            start_y = HEIGHT // 2 - (len(current_options) * spacing) // 2
             for i, option in enumerate(current_options):
                 x_opt = WIDTH // 2
                 y_opt = start_y + i * spacing
-                rect = pygame.Rect(x_opt - 100, y_opt - -70, 200, 60)
+                rect = pygame.Rect(x_opt - box_width // 2, y_opt, box_width, box_height)
                 option_rects.append(rect)
                 if flash_index == i and flash_color:
                     s = pygame.Surface((rect.width, rect.height), pygame.SRCALPHA)
@@ -720,7 +717,6 @@ def main(difficulty):
             draw_text(f"Syllable/s: {syllable_text}", FONT_HINT, BLACK, WIDTH // 2, HEIGHT - 50)
             if hint:
                 draw_text(f"Hint: {hint}", FONT_HINT, BLACK, WIDTH // 2, HEIGHT - 30)
-        # Show AI feedback popup for a few seconds if available (only on medium)
         if ai_feedback and (time.time() - ai_feedback_time) < AI_FEEDBACK_DURATION and difficulty == "medium":
             popup_width = WIDTH - 120
             popup_height = 80
@@ -749,7 +745,6 @@ def main(difficulty):
             pygame.time.delay(3000)
             play_bgm()
             running = False
-
 
 def draw_gradient_background(screen, width, height, top_color, bottom_color):
     for y in range(height):
