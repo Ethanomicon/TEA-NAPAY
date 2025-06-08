@@ -495,17 +495,9 @@ def get_phonetic_feedback(target, attempt):
     if ratio > 0.8:
         return "Great job! That was very close. Try saying each part slowly."
     elif ratio > 0.5:
-        diffs = []
-        sm = difflib.ndiff(target.lower(), attempt.lower())
-        for s in sm:
-            if s.startswith('-'):
-                diffs.append(f"missing '{s[-1]}'")
-            elif s.startswith('+'):
-                diffs.append(f"extra '{s[-1]}'")
-        hint = " and ".join(diffs) if diffs else "a small mistake"
-        return f"Good try! You made {hint}. Let's listen and try again."
+        return "Good try! That was close. Let's listen and try again."
     else:
-        return "That's a good try. Let's break the word down and practice together!"
+        return "I didn't hear anything. Let's try again together!"
 
 def syllable_feedback(word):
     # Repeat the word syllable by syllable for practice, using phonetic mapping
@@ -518,11 +510,26 @@ def syllable_feedback(word):
     tts_engine.say(word)
     tts_engine.runAndWait()
 
+def get_feedback_color(feedback):
+    """Return color tuple for ai_feedback string."""
+    if "perfect" in feedback.lower() or "awesome" in feedback.lower():
+        return (34, 139, 34)  # GREEN
+    # Change "almost correct" from yellow to orange
+    elif "very close" in feedback.lower() or "great job" in feedback.lower():
+        return (255, 140, 0)  # ORANGE (was YELLOW)
+    elif "good try" in feedback.lower() or "let's break the word" in feedback.lower():
+        return (255, 69, 0)   # RED
+    elif "didn't hear anything" in feedback.lower():
+        return (255, 69, 0)   # RED
+    else:
+        return (0, 0, 0)      # BLACK (default)
+
 def main(difficulty):
     global screen, WIDTH, HEIGHT
     running = True
     current_word_index = 0
     message = ""
+    message_color = BLACK
     hint_shown = False
     attempts = 0
 
@@ -557,12 +564,13 @@ def main(difficulty):
     AI_FEEDBACK_DURATION = 8  # seconds
 
     def load_word(index):
-        nonlocal correct_word, hint, message, current_options, option_rects, hint_shown, syllable_hint, attempts
+        nonlocal correct_word, hint, message, message_color, current_options, option_rects, hint_shown, syllable_hint, attempts
         nonlocal ai_feedback, ai_feedback_time
         current_data = words[difficulty][index]
         correct_word = current_data["word"]
         hint = current_data.get("hint", "")
         message = ""
+        message_color = BLACK
         hint_shown = False
         attempts = attempts_db.get(difficulty, {}).get(correct_word, 0)
         syllable_hint = split_syllables(correct_word)
@@ -610,6 +618,7 @@ def main(difficulty):
                     if user_speech.strip() == correct_word.lower():
                         play_sound(correct_sound)
                         message = "Correct!"
+                        message_color = GREEN
                         pygame.time.delay(700)
                         current_word_index += 1
                         progress[difficulty] = max(progress.get(difficulty, 0), current_word_index)
@@ -623,19 +632,22 @@ def main(difficulty):
                     else:
                         play_sound(wrong_sound)
                         message = f"Try again. You said: {user_speech.capitalize()}"
+                        message_color = RED
                 if help_button.collidepoint(x, y):
                     speak_syllables(correct_word)
                     message = "Listen carefully to syllables!"
+                    message_color = BLACK
                     hint_shown = True
                 if ai_button.collidepoint(x, y):
-                    # Use last attempt or ask for a new one
                     user_speech = recognize_speech()
                     ai_feedback = get_phonetic_feedback(correct_word, user_speech)
                     ai_feedback_time = time.time()
                     tts_engine.say(ai_feedback)
                     tts_engine.runAndWait()
                     syllable_feedback(correct_word)
+                    # Always show the feedback text as the main message, for all levels
                     message = ai_feedback
+                    message_color = get_feedback_color(ai_feedback)
                 if difficulty == "medium":
                     for idx, rect in enumerate(option_rects):
                         if rect.collidepoint(x, y):
@@ -651,12 +663,14 @@ def main(difficulty):
                                 flash_color = (0, 255, 0)
                                 flash_start_time = pygame.time.get_ticks()
                                 message = "Correct!"
+                                message_color = GREEN
                             else:
                                 play_sound(wrong_sound)
                                 flash_index = idx
                                 flash_color = (255, 0, 0)
                                 flash_start_time = pygame.time.get_ticks()
                                 message = "Try again."
+                                message_color = RED
                                 hint_shown = True
 
         draw_gradient_background(screen, WIDTH, HEIGHT, (255, 255, 255), (216, 191, 216))
@@ -692,35 +706,29 @@ def main(difficulty):
             pygame.draw.rect(screen, GREEN, mic_button)
             draw_text("Mic", FONT_SMALL, WHITE, mic_button.centerx, mic_button.centery)
         pygame.draw.rect(screen, PURPLE, help_button)
-        draw_text("AI Help", FONT_SMALL, WHITE, help_button.centerx, help_button.centery)  # <--- changed here
+        draw_text("AI Help", FONT_SMALL, WHITE, help_button.centerx, help_button.centery)
         pygame.draw.rect(screen, YELLOW, ai_button)
         draw_text("AI Assist", FONT_SMALL, BLACK, ai_button.centerx, ai_button.centery)
         if show_congrats:
             draw_text("Congratulations! You finished this level. Excellent job!", FONT_LARGE, GREEN, WIDTH // 2, HEIGHT // 2 - 40)
             draw_text("Always remember that practice makes perfect.", FONT_LARGE, GREEN, WIDTH // 2, HEIGHT // 2 + 40)
         else:
-            if message == "Correct!":
-                msg_color = GREEN
-            elif "Try" in message:
-                msg_color = RED
-            else:
-                msg_color = BLACK
-            draw_text(message, FONT_SMALL, msg_color, WIDTH // 2, HEIGHT - 80)
+            draw_text(message, FONT_SMALL, message_color, WIDTH // 2, HEIGHT - 80)
         draw_text(f"Attempts: {attempts}", FONT_SMALL, BLACK, 80, HEIGHT - 120, center=False)
         if hint_shown:
             syllable_text = " - ".join(syllable_hint)
             draw_text(f"Syllable/s: {syllable_text}", FONT_HINT, BLACK, WIDTH // 2, HEIGHT - 50)
             if hint:
                 draw_text(f"Hint: {hint}", FONT_HINT, BLACK, WIDTH // 2, HEIGHT - 30)
-        # Show AI feedback popup for a few seconds if available
-        if ai_feedback and (time.time() - ai_feedback_time) < AI_FEEDBACK_DURATION:
+        # Show AI feedback popup for a few seconds if available (only on medium)
+        if ai_feedback and (time.time() - ai_feedback_time) < AI_FEEDBACK_DURATION and difficulty == "medium":
             popup_width = WIDTH - 120
             popup_height = 80
             popup_x = 60
             popup_y = HEIGHT - popup_height - 130
             pygame.draw.rect(screen, (240, 246, 255), (popup_x, popup_y, popup_width, popup_height))
             draw_text("AI Feedback:", FONT_SMALL, (70, 70, 70), popup_x + 10, popup_y + 18, center=False)
-            draw_text(ai_feedback, FONT_HINT, (0, 0, 0), popup_x + 10, popup_y + popup_height // 2 + 5, center=False)
+            draw_text(ai_feedback, FONT_HINT, get_feedback_color(ai_feedback), popup_x + 10, popup_y + popup_height // 2 + 5, center=False)
         if flash_index is not None:
             current_time = pygame.time.get_ticks()
             if current_time - flash_start_time > FLASH_DURATION:
@@ -741,6 +749,7 @@ def main(difficulty):
             pygame.time.delay(3000)
             play_bgm()
             running = False
+
 
 def draw_gradient_background(screen, width, height, top_color, bottom_color):
     for y in range(height):
