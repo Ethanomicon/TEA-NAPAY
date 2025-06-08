@@ -680,10 +680,11 @@ def main(difficulty):
         draw_text(correct_word, FONT_LARGE, BLUE, WIDTH // 2, HEIGHT // 3)
         option_rects.clear()
         if difficulty == "medium":
-            spacing = HEIGHT // 13
+            spacing = HEIGHT // 10
+            offset_down = HEIGHT // 10
             box_height = 38
             box_width = 170
-            start_y = HEIGHT // 2 - (len(current_options) * spacing) // 2
+            start_y = HEIGHT // 2 - (len(current_options) * spacing) // 2 + offset_down
             for i, option in enumerate(current_options):
                 x_opt = WIDTH // 2
                 y_opt = start_y + i * spacing
