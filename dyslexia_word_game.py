@@ -9,10 +9,6 @@ import sys
 import time
 import difflib
 
-# --- NEW: NLP imports ---
-from textblob import TextBlob
-from fuzzywuzzy import fuzz
-
 pygame.init()
 
 # --- BACKGROUND MUSIC SETUP ---
@@ -214,27 +210,6 @@ def recognize_speech():
         except sr.RequestError as e:
             print(f"RequestError: {e}")
             return "Speech service unavailable. Please check your connection."
-
-# --- NEW: NLP feedback function ---
-def nlp_feedback(target_word, user_input):
-    # Normalize text
-    user_input = user_input.strip().lower()
-    target_word = target_word.strip().lower()
-
-    # Spell correction
-    corrected = str(TextBlob(user_input).correct())
-
-    # Fuzzy matching (phonetic/typo similarity)
-    ratio = fuzz.ratio(target_word, corrected)
-    partial = fuzz.partial_ratio(target_word, corrected)
-
-    # Feedback logic
-    if corrected == target_word:
-        return "Perfect! You said the word correctly."
-    elif ratio > 85 or partial > 90:
-        return f"Very close! I heard '{user_input}'. Did you mean '{target_word}'?"
-    else:
-        return f"Let's try again. I heard '{user_input}'."
 
 def achievements_menu():
     global screen, WIDTH, HEIGHT
@@ -643,9 +618,7 @@ def main(difficulty):
                         attempts_db[difficulty] = {}
                     attempts_db[difficulty][correct_word] = attempts
                     save_attempts(attempts_db)
-                    # --- Use NLP feedback for speech recognition ---
-                    nlp_msg = nlp_feedback(correct_word, user_speech)
-                    if "Perfect!" in nlp_msg or user_speech.strip() == correct_word.lower():
+                    if user_speech.strip() == correct_word.lower():
                         play_sound(correct_sound)
                         message = "Correct!"
                         message_color = GREEN
@@ -661,7 +634,7 @@ def main(difficulty):
                             current_options, option_rects = load_word(current_word_index)
                     else:
                         play_sound(wrong_sound)
-                        message = nlp_msg
+                        message = f"Try again. You said: {user_speech.capitalize()}"
                         message_color = RED
                 if help_button.collidepoint(x, y):
                     speak_syllables(correct_word)
@@ -670,17 +643,13 @@ def main(difficulty):
                     hint_shown = True
                 if ai_button.collidepoint(x, y):
                     user_speech = recognize_speech()
-                    # Combine traditional and NLP feedback
                     ai_feedback = get_phonetic_feedback(correct_word, user_speech)
-                    nlp_msg = nlp_feedback(correct_word, user_speech)
                     ai_feedback_time = time.time()
                     tts_engine.say(ai_feedback)
                     tts_engine.runAndWait()
-                    tts_engine.say(nlp_msg)
-                    tts_engine.runAndWait()
                     syllable_feedback(correct_word)
                     # Always show the feedback text as the main message, for all levels
-                    message = ai_feedback + " | " + nlp_msg
+                    message = ai_feedback
                     message_color = get_feedback_color(ai_feedback)
                     ai_hint_display = True  # <-- Show hint after AI Assist
                 if difficulty == "medium":
