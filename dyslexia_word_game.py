@@ -12,8 +12,8 @@ import difflib
 pygame.init()
 
 # --- BACKGROUND MUSIC SETUP ---
-BACKGROUND_MUSIC_FILE = "bgm.ogg"  # Put your music file in the same folder
-bgm_muted = False  # Global mute status (False: play music, True: mute music)
+BACKGROUND_MUSIC_FILE = "bgm.ogg"
+bgm_muted = False
 
 def play_bgm(loop=True):
     global bgm_muted
@@ -57,7 +57,6 @@ YELLOW = (255, 215, 0)
 tts_engine = pyttsx3.init()
 tts_engine.setProperty('rate', 150)
 
-# Optionally set a better voice if available
 voices = tts_engine.getProperty('voices')
 for voice in voices:
     if 'female' in voice.name.lower() or 'en_us' in voice.id.lower():
@@ -90,7 +89,7 @@ def congrats_screen():
     tts_thread = threading.Thread(target=run_tts)
     tts_thread.start()
     start_time = pygame.time.get_ticks()
-    duration = 10000  # ms
+    duration = 10000
     CUSTOM_FONT_SIZE = 48
     font = pygame.font.Font(None, CUSTOM_FONT_SIZE)
     running = True
@@ -111,7 +110,7 @@ def congrats_screen():
         if pygame.time.get_ticks() - start_time > duration:
             running = False
     tts_thread.join(timeout=0.5)
-    play_bgm()  # Resume BGM after congrats if not muted
+    play_bgm()
 
 def get_fonts(height):
     large_size = max(30, height // 10)
@@ -128,7 +127,6 @@ def draw_text(text, font, color, x, y, center=True):
     rect = rendered.get_rect(center=(x, y) if center else (x, y))
     screen.blit(rendered, rect)
 
-# Words database with hints (unchanged)
 words = {
     "easy": [
         {"word": "hello"},
@@ -152,7 +150,6 @@ words = {
         {"word": "sign"}
     ]
 }
-
 
 SAVE_FILE = "progress.json"
 ATTEMPTS_FILE = "attempts.json"
@@ -218,25 +215,156 @@ def achievements_menu():
     back_button = pygame.Rect(20, 20, 100, 40)
     reset_button = pygame.Rect(WIDTH // 2 - 100, HEIGHT - 100, 200, 50)
     mute_button = pygame.Rect(WIDTH - 140, 20, 120, 40)
-    FONT_LARGE, FONT_SMALL, _ = get_fonts(HEIGHT)
+    FONT_LARGE, FONT_SMALL, FONT_HINT = get_fonts(HEIGHT)
+
+    attempts_db = load_attempts()
+    progress = load_progress()
+
+    # Build achievements
+    achievements = []
+    easy_done = progress.get("easy", 0) >= len(words["easy"])
+    achievements.append({
+        "name": "Easy Peasy",
+        "desc": "Complete all words in Easy level.",
+        "unlocked": easy_done
+    })
+    medium_done = progress.get("medium", 0) >= len(words["medium"])
+    achievements.append({
+        "name": "Inter-Medium",
+        "desc": "Complete all words in Medium level.",
+        "unlocked": medium_done
+    })
+    hard_done = progress.get("hard", 0) >= len(words["hard"])
+    achievements.append({
+        "name": "Hardworker",
+        "desc": "Complete all words in Hard level.",
+        "unlocked": hard_done
+    })
+    has_5_attempts = any(
+        count >= 5 for diff in attempts_db for count in attempts_db[diff].values()
+    )
+    achievements.append({
+        "name": "Practice Makes Perfect",
+        "desc": "Get at least 5 attempts on a word.",
+        "unlocked": has_5_attempts
+    })
+    has_10_attempts = any(
+        count >= 10 for diff in attempts_db for count in attempts_db[diff].values()
+    )
+    achievements.append({
+        "name": "Trial And Error",
+        "desc": "Get at least 10 attempts on a word.",
+        "unlocked": has_10_attempts
+    })
+    for diff in ["easy", "medium", "hard"]:
+        all_1 = all(attempts_db.get(diff, {}).get(word_data["word"], 0) == 1 for word_data in words[diff])
+        achievements.append({
+            "name": f"Excellent User ({diff.title()})",
+            "desc": f"Finish all words in the {diff.title()} level with only 1 attempt per word.",
+            "unlocked": all_1
+        })
+
+    # Progress summary rows
+    progress_rows = []
+    for i, diff in enumerate(["easy", "medium", "hard"]):
+        total_words = len(words[diff])
+        completed = progress.get(diff, 0)
+        progress_rows.append(f"{diff.capitalize()}: {completed} / {total_words} words completed")
+
+    # Unified scrollable area for progress summary and achievements
+    list_items = []
+    for text in progress_rows:
+        list_items.append(("progress", text))
+    list_items.append(("spacer", None))
+    for ach in achievements:
+        list_items.append(("achievement", ach))
+
+    ITEM_HEIGHT = 60
+    PROGRESS_HEIGHT = 48
+    SPACER_HEIGHT = 30
+    top_margin = 120
+    bottom_margin = 110
+    scrollbar_width = 18
+
+    # Calculate full content height
+    content_height = 0
+    for typ, data in list_items:
+        if typ == "spacer":
+            content_height += SPACER_HEIGHT
+        elif typ == "progress":
+            content_height += PROGRESS_HEIGHT
+        else:
+            content_height += ITEM_HEIGHT
+
+    view_height = HEIGHT - top_margin - bottom_margin
+    max_scroll = max(0, content_height - view_height)
+    scroll_y = 0
+    is_dragging = False
+    drag_offset = 0
+    clock = pygame.time.Clock()
+
     while running:
+        clock.tick(60)
         draw_gradient_background(screen, WIDTH, HEIGHT, (255, 255, 255), (216, 191, 216))
-        draw_text("Achievements / Progress", FONT_LARGE, BLUE, WIDTH // 2, HEIGHT // 6)
-        y_start = HEIGHT // 3
-        spacing = 50
-        progress = load_progress()
-        for i, diff in enumerate(["easy", "medium", "hard"]):
-            total_words = len(words[diff])
-            completed = progress.get(diff, 0)
-            text = f"{diff.capitalize()}: {completed} / {total_words} words completed"
-            draw_text(text, FONT_SMALL, BLACK, WIDTH // 2, y_start + i * spacing)
-        pygame.draw.rect(screen, GRAY, back_button)
-        draw_text("Back", FONT_SMALL, BLACK, back_button.centerx, back_button.centery)
-        pygame.draw.rect(screen, RED, reset_button)
-        draw_text("Reset Progress", FONT_SMALL, WHITE, reset_button.centerx, reset_button.centery)
-        pygame.draw.rect(screen, BLUE if not bgm_muted else GRAY, mute_button)
-        draw_text("Mute" if not bgm_muted else "Unmute", FONT_SMALL, WHITE, mute_button.centerx, mute_button.centery)
+        draw_text("Achievements / Progress", FONT_LARGE, BLUE, WIDTH // 2, 70)
+
+        # Centered progress summary and achievement boxes
+        y = top_margin - int(scroll_y)
+
+        # Progress summary (centered)
+        progress_width = int(WIDTH * 0.6)
+        progress_x = (WIDTH - progress_width) // 2
+        py = y
+        for i, text in enumerate(progress_rows):
+            if py + PROGRESS_HEIGHT > top_margin and py < HEIGHT - bottom_margin:
+                bar_rect = pygame.Rect(progress_x, py, progress_width, PROGRESS_HEIGHT - 8)
+                pygame.draw.rect(screen, (100, 149, 237), bar_rect, border_radius=12)
+                draw_text(text, FONT_SMALL, (255,255,255), bar_rect.centerx, bar_rect.centery)
+            py += PROGRESS_HEIGHT
+
+        # Achievements (centered)
+        ay = y + len(progress_rows) * PROGRESS_HEIGHT + SPACER_HEIGHT
+        ach_box_width = int(WIDTH * 0.6)
+        ach_x = (WIDTH - ach_box_width) // 2
+
+        for typ, data in list_items[len(progress_rows)+1:]:  # skip progress & spacer
+            if typ == "achievement":
+                if ay + ITEM_HEIGHT < top_margin:
+                    ay += ITEM_HEIGHT
+                    continue
+                if ay > HEIGHT - bottom_margin:
+                    break
+                color = (255, 215, 0) if data["unlocked"] else (200, 200, 200)  # YELLOW if unlocked, else gray
+                box_rect = pygame.Rect(ach_x, ay, ach_box_width, ITEM_HEIGHT-8)
+                pygame.draw.rect(screen, color, box_rect, border_radius=14)
+                pygame.draw.rect(screen, (128,0,128), box_rect, 2, border_radius=14)
+                # Achievement name and desc centered horizontally in the box
+                draw_text(data["name"], FONT_SMALL, (128, 0, 128) if data["unlocked"] else (0,0,0), box_rect.centerx, box_rect.top+18, center=True)
+                draw_text(data["desc"], FONT_HINT, (40,40,40), box_rect.centerx, box_rect.top+38, center=True)
+                ay += ITEM_HEIGHT
+
+        # Draw scrollbar to the right of the achievement area
+        if max_scroll > 0:
+            sb_area = HEIGHT - top_margin - bottom_margin
+            bar_height = max(40, int(sb_area * sb_area / content_height))
+            sb_track_height = sb_area - bar_height
+            if sb_track_height > 0:
+                bar_top = top_margin + int((scroll_y / max_scroll) * sb_track_height)
+            else:
+                bar_top = top_margin
+            sb_x = ach_x + ach_box_width + 10
+            pygame.draw.rect(screen, (200,200,200), (sb_x, top_margin, scrollbar_width, sb_area), 0, border_radius=8)
+            pygame.draw.rect(screen, (128,0,128), (sb_x, bar_top, scrollbar_width, bar_height), 0, border_radius=8)
+
+        # UI Buttons
+        pygame.draw.rect(screen, (200,200,200), back_button)
+        draw_text("Back", FONT_SMALL, (0,0,0), back_button.centerx, back_button.centery)
+        pygame.draw.rect(screen, (255,69,0), reset_button)
+        draw_text("Reset Progress", FONT_SMALL, (255,255,255), reset_button.centerx, reset_button.centery)
+        pygame.draw.rect(screen, (100,149,237) if not bgm_muted else (200,200,200), mute_button)
+        draw_text("Mute" if not bgm_muted else "Unmute", FONT_SMALL, (255,255,255), mute_button.centerx, mute_button.centery)
         pygame.display.flip()
+
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 pygame.quit()
@@ -247,6 +375,10 @@ def achievements_menu():
                 reset_button.x = WIDTH // 2 - 100
                 reset_button.y = HEIGHT - 100
                 mute_button.x = WIDTH - 140
+                FONT_LARGE, FONT_SMALL, FONT_HINT = get_fonts(HEIGHT)
+                view_height = HEIGHT - top_margin - bottom_margin
+                max_scroll = max(0, content_height - view_height)
+                scroll_y = min(scroll_y, max_scroll)
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 if back_button.collidepoint(event.pos):
                     running = False
@@ -254,6 +386,36 @@ def achievements_menu():
                     reset_progress()
                 elif mute_button.collidepoint(event.pos):
                     set_bgm_mute(not bgm_muted)
+                if max_scroll > 0:
+                    ach_box_width = int(WIDTH * 0.6)
+                    ach_x = (WIDTH - ach_box_width) // 2
+                    sb_area = HEIGHT - top_margin - bottom_margin
+                    bar_height = max(40, int(sb_area * sb_area / content_height))
+                    sb_track_height = sb_area - bar_height
+                    if sb_track_height > 0:
+                        bar_top = top_margin + int((scroll_y / max_scroll) * sb_track_height)
+                    else:
+                        bar_top = top_margin
+                    sb_x = ach_x + ach_box_width + 10
+                    scrollbar_rect = pygame.Rect(sb_x, bar_top, scrollbar_width, bar_height)
+                    if scrollbar_rect.collidepoint(event.pos):
+                        is_dragging = True
+                        drag_offset = event.pos[1] - bar_top
+            elif event.type == pygame.MOUSEBUTTONUP:
+                is_dragging = False
+            elif event.type == pygame.MOUSEMOTION:
+                if is_dragging and max_scroll > 0:
+                    sb_area = HEIGHT - top_margin - bottom_margin
+                    bar_height = max(40, int(sb_area * sb_area / content_height))
+                    sb_track_height = sb_area - bar_height
+                    mouse_y = event.pos[1]
+                    drag_y = mouse_y - drag_offset
+                    drag_y = max(top_margin, min(drag_y, top_margin + sb_track_height))
+                    percent = 0 if sb_track_height == 0 else (drag_y - top_margin) / sb_track_height
+                    scroll_y = percent * max_scroll
+            elif event.type == pygame.MOUSEWHEEL:
+                scroll_y -= event.y * 40
+                scroll_y = max(0, min(scroll_y, max_scroll))
 
 def database_menu():
     global screen, WIDTH, HEIGHT
@@ -341,7 +503,6 @@ def menu():
         draw_text("Achievements", FONT_SMALL, WHITE, achievements_btn.centerx, achievements_btn.centery)
         draw_text("Database", FONT_SMALL, WHITE, database_btn.centerx, database_btn.centery)
         draw_text("Quit", FONT_SMALL, WHITE, quit_btn.centerx, quit_btn.centery)
-        # Add the group/version text centered at the bottom
         draw_text(
             "Created by Nabus et al. - Alpha Version - 2025",
             FONT_SMALL, BLACK, WIDTH // 2, HEIGHT - 35
@@ -456,10 +617,8 @@ phonetic_map = {
 
 def speak_syllables(word):
     syllables = split_syllables(word)
-    print(f"Debug: Split syllables for '{word}' -> {syllables}")
     for syl in syllables:
         to_speak = phonetic_map.get(syl.lower(), syl)
-        print(f"Speaking syllable: {to_speak}")
         tts_engine.say(to_speak)
         tts_engine.runAndWait()
         time.sleep(0.3)
@@ -478,33 +637,26 @@ def split_syllables_medium(word):
 
 def speak_syllables_medium(word):
     syllables = split_syllables_medium(word)
-    print(f"Debug: Split syllables for '{word}' -> {syllables}")
     for syl in syllables:
         to_speak = phonetic_map.get(syl.lower(), syl)
-        print(f"Speaking syllable: {to_speak}")
         tts_engine.say(to_speak)
         tts_engine.runAndWait()
         time.sleep(0.3)
 
 def get_phonetic_feedback(target, attempt):
-    # Always say what the user said, on all levels and all modes
     if not attempt or attempt.strip() == "":
         return "I didn't hear anything. Let's try again together!"
-    ai_say = f"You said {attempt}."
-    if attempt.lower() == target.lower():
-        feedback = "Awesome! You said it perfectly!"
+    elif attempt.lower() == target.lower():
+        return "Awesome! You said it perfectly!"
+    ratio = difflib.SequenceMatcher(None, target.lower(), attempt.lower()).ratio()
+    if ratio > 0.8:
+        return "Great job! That was very close. Try saying each part slowly."
+    elif ratio > 0.5:
+        return "Good try! That was close. Let's listen and try again."
     else:
-        ratio = difflib.SequenceMatcher(None, target.lower(), attempt.lower()).ratio()
-        if ratio > 0.8:
-            feedback = "Great job! That was very close. Try saying each part slowly."
-        elif ratio > 0.5:
-            feedback = "Good try! That was close. Let's listen and try again."
-        else:
-            feedback = "Let's try again together!"
-    return f"{ai_say} {feedback}"
+        return "I didn't hear anything. Let's try again together!"
 
 def syllable_feedback(word):
-    # Repeat the word syllable by syllable for practice, using phonetic mapping
     sylls = split_syllables(word)
     for syl in sylls:
         to_speak = phonetic_map.get(syl.lower(), syl)
@@ -515,18 +667,16 @@ def syllable_feedback(word):
     tts_engine.runAndWait()
 
 def get_feedback_color(feedback):
-    """Return color tuple for ai_feedback string."""
     if "perfect" in feedback.lower() or "awesome" in feedback.lower():
-        return (34, 139, 34)  # GREEN
-    # Change "almost correct" from yellow to orange
+        return (34, 139, 34)
     elif "very close" in feedback.lower() or "great job" in feedback.lower():
-        return (255, 140, 0)  # ORANGE (was YELLOW)
+        return (255, 140, 0)
     elif "good try" in feedback.lower() or "let's break the word" in feedback.lower():
-        return (255, 69, 0)   # RED
+        return (255, 69, 0)
     elif "didn't hear anything" in feedback.lower():
-        return (255, 69, 0)   # RED
+        return (255, 69, 0)
     else:
-        return (0, 0, 0)      # BLACK (default)
+        return (0, 0, 0)
 
 def main(difficulty):
     global screen, WIDTH, HEIGHT
@@ -535,7 +685,7 @@ def main(difficulty):
     message = ""
     message_color = BLACK
     hint_shown = False
-    ai_hint_display = False  # <-- New flag: display hint after AI Assist
+    ai_hint_display = False
     attempts = 0
 
     option_rects = []
@@ -544,7 +694,6 @@ def main(difficulty):
     hint = ""
 
     back_button = pygame.Rect(20, 20, 100, 40)
-
     speak_button = pygame.Rect(WIDTH - 140, 20, 120, 40)
     help_button = pygame.Rect(WIDTH - 140, 140, 120, 40)
     ai_button = pygame.Rect(WIDTH - 140, 200, 120, 40)
@@ -562,11 +711,10 @@ def main(difficulty):
     FLASH_DURATION = 500
 
     syllable_hint = []
-    show_congrats = False  # New flag for showing congrats text
-
+    show_congrats = False
     ai_feedback = ""
     ai_feedback_time = 0
-    AI_FEEDBACK_DURATION = 8  # seconds
+    AI_FEEDBACK_DURATION = 8
 
     def load_word(index):
         nonlocal correct_word, hint, message, message_color, current_options, option_rects, hint_shown, syllable_hint, attempts, ai_hint_display
@@ -577,7 +725,7 @@ def main(difficulty):
         message = ""
         message_color = BLACK
         hint_shown = False
-        ai_hint_display = False  # <-- Reset AI assist hint flag
+        ai_hint_display = False
         attempts = attempts_db.get(difficulty, {}).get(correct_word, 0)
         syllable_hint = split_syllables(correct_word)
         ai_feedback = ""
@@ -609,7 +757,7 @@ def main(difficulty):
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 x, y = event.pos
                 if back_button.collidepoint(x, y):
-                    play_bgm()  # Resume music when backing out of a game
+                    play_bgm()
                     running = False
                     return
                 if speak_button.collidepoint(x, y):
@@ -651,10 +799,9 @@ def main(difficulty):
                     tts_engine.say(ai_feedback)
                     tts_engine.runAndWait()
                     syllable_feedback(correct_word)
-                    # Always show the feedback text as the main message, for all levels
                     message = ai_feedback
                     message_color = get_feedback_color(ai_feedback)
-                    ai_hint_display = True  # <-- Show hint after AI Assist
+                    ai_hint_display = True
                 if difficulty == "medium":
                     for idx, rect in enumerate(option_rects):
                         if rect.collidepoint(x, y):
@@ -722,13 +869,11 @@ def main(difficulty):
         else:
             draw_text(message, FONT_SMALL, message_color, WIDTH // 2, HEIGHT - 80)
         draw_text(f"Attempts: {attempts}", FONT_SMALL, BLACK, 80, HEIGHT - 120, center=False)
-        # Show hint if hint_shown or after AI Assist
         if hint_shown or ai_hint_display:
             syllable_text = " - ".join(syllable_hint)
             draw_text(f"Syllable/s: {syllable_text}", FONT_HINT, BLACK, WIDTH // 2, HEIGHT - 50)
             if hint:
                 draw_text(f"Hint: {hint}", FONT_HINT, BLACK, WIDTH // 2, HEIGHT - 30)
-        # Show AI feedback popup for a few seconds if available (only on medium)
         if ai_feedback and (time.time() - ai_feedback_time) < AI_FEEDBACK_DURATION and difficulty == "medium":
             popup_width = WIDTH - 120
             popup_height = 80
