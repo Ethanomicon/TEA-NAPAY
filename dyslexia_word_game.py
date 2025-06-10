@@ -15,6 +15,22 @@ pygame.init()
 BACKGROUND_MUSIC_FILE = "bgm.ogg"
 bgm_muted = False
 
+ACH_POPPED_FILE = "achievement_popped.json"
+
+def load_achievement_popped():
+    if os.path.exists(ACH_POPPED_FILE):
+        with open(ACH_POPPED_FILE, "r") as f:
+            return json.load(f)
+    return {}
+
+def save_achievement_popped(achievement_popped):
+    with open(ACH_POPPED_FILE, "w") as f:
+        json.dump(achievement_popped, f)
+
+def reset_achievement_popped():
+    if os.path.exists(ACH_POPPED_FILE):
+        os.remove(ACH_POPPED_FILE)
+
 def play_bgm(loop=True):
     global bgm_muted
     if not bgm_muted and not pygame.mixer.music.get_busy():
@@ -217,64 +233,11 @@ def achievements_menu():
     mute_button = pygame.Rect(WIDTH - 140, 20, 120, 40)
     FONT_LARGE, FONT_SMALL, FONT_HINT = get_fonts(HEIGHT)
 
-    # --- ACHIEVEMENT SOUND (move global if you want to avoid reload on each call) ---
+    # --- ACHIEVEMENT SOUND ---
     try:
         achievement_sound = pygame.mixer.Sound('achievement.wav')
     except pygame.error:
         achievement_sound = None
-
-    attempts_db = load_attempts()
-    progress = load_progress()
-
-    # Build achievements list
-    achievements = []
-    easy_done = progress.get("easy", 0) >= len(words["easy"])
-    achievements.append({
-        "name": "Easy Peasy",
-        "desc": "Complete all words in Easy level.",
-        "unlocked": easy_done
-    })
-    medium_done = progress.get("medium", 0) >= len(words["medium"])
-    achievements.append({
-        "name": "Inter-Medium",
-        "desc": "Complete all words in Medium level.",
-        "unlocked": medium_done
-    })
-    hard_done = progress.get("hard", 0) >= len(words["hard"])
-    achievements.append({
-        "name": "Hardworker",
-        "desc": "Complete all words in Hard level.",
-        "unlocked": hard_done
-    })
-    has_5_attempts = any(
-        count >= 5 for diff in attempts_db for count in attempts_db[diff].values()
-    )
-    achievements.append({
-        "name": "Practice Makes Perfect",
-        "desc": "Get at least 5 attempts on a word.",
-        "unlocked": has_5_attempts
-    })
-    has_10_attempts = any(
-        count >= 10 for diff in attempts_db for count in attempts_db[diff].values()
-    )
-    achievements.append({
-        "name": "Trial And Error",
-        "desc": "Get at least 10 attempts on a word.",
-        "unlocked": has_10_attempts
-    })
-    for diff in ["easy", "medium", "hard"]:
-        all_1 = all(attempts_db.get(diff, {}).get(word_data["word"], 0) == 1 for word_data in words[diff])
-        achievements.append({
-            "name": f"Excellent User ({diff.title()})",
-            "desc": f"Finish all words in the {diff.title()} level with only 1 attempt per word.",
-            "unlocked": all_1
-        })
-
-    progress_rows = []
-    for i, diff in enumerate(["easy", "medium", "hard"]):
-        total_words = len(words[diff])
-        completed = progress.get(diff, 0)
-        progress_rows.append(f"{diff.capitalize()}: {completed} / {total_words} words completed")
 
     # Popup state
     popup_active = False
@@ -282,45 +245,98 @@ def achievements_menu():
     popup_time = 0
     POPUP_DURATION = 2.5  # seconds
 
-    # Track previously unlocked achievements
-    already_unlocked = [ach["unlocked"] for ach in achievements]
+    # Load persistent popup "already shown" state
+    achievement_popped = load_achievement_popped()
 
-    # Unified scrollable area for progress summary and achievements (centered)
-    list_items = []
-    for text in progress_rows:
-        list_items.append(("progress", text))
-    list_items.append(("spacer", None))
-    for ach in achievements:
-        list_items.append(("achievement", ach))
-
-    ITEM_HEIGHT = 60
-    PROGRESS_HEIGHT = 48
-    SPACER_HEIGHT = 30
+    scroll_y = 0
+    is_dragging = False
+    drag_offset = 0
     top_margin = 120
     bottom_margin = 110
     scrollbar_width = 18
 
-    content_height = 0
-    for typ, data in list_items:
-        if typ == "spacer":
-            content_height += SPACER_HEIGHT
-        elif typ == "progress":
-            content_height += PROGRESS_HEIGHT
-        else:
-            content_height += ITEM_HEIGHT
-
-    view_height = HEIGHT - top_margin - bottom_margin
-    max_scroll = max(0, content_height - view_height)
-    scroll_y = 0
-    is_dragging = False
-    drag_offset = 0
     clock = pygame.time.Clock()
-
-    # --- Ensure sound is only played once per unlock ---
-    achievement_fired = [False for _ in achievements]
-
     while running:
         clock.tick(60)
+        # Reload progress and attempts every frame to show reset and new unlocks instantly
+        attempts_db = load_attempts()
+        progress = load_progress()
+
+        # Build achievements list fresh
+        achievements = []
+        easy_done = progress.get("easy", 0) >= len(words["easy"])
+        achievements.append({
+            "name": "Easy Peasy",
+            "desc": "Complete all words in Easy level.",
+            "unlocked": easy_done
+        })
+        medium_done = progress.get("medium", 0) >= len(words["medium"])
+        achievements.append({
+            "name": "Inter-Medium",
+            "desc": "Complete all words in Medium level.",
+            "unlocked": medium_done
+        })
+        hard_done = progress.get("hard", 0) >= len(words["hard"])
+        achievements.append({
+            "name": "Hardworker",
+            "desc": "Complete all words in Hard level.",
+            "unlocked": hard_done
+        })
+        has_5_attempts = any(
+            count >= 5 for diff in attempts_db for count in attempts_db[diff].values()
+        )
+        achievements.append({
+            "name": "Practice Makes Perfect",
+            "desc": "Get at least 5 attempts on a word.",
+            "unlocked": has_5_attempts
+        })
+        has_10_attempts = any(
+            count >= 10 for diff in attempts_db for count in attempts_db[diff].values()
+        )
+        achievements.append({
+            "name": "Trial And Error",
+            "desc": "Get at least 10 attempts on a word.",
+            "unlocked": has_10_attempts
+        })
+        for diff in ["easy", "medium", "hard"]:
+            all_1 = all(attempts_db.get(diff, {}).get(word_data["word"], 0) == 1 for word_data in words[diff])
+            achievements.append({
+                "name": f"Excellent User ({diff.title()})",
+                "desc": f"Finish all words in the {diff.title()} level with only 1 attempt per word.",
+                "unlocked": all_1
+            })
+        # Progress summary rows
+        progress_rows = []
+        for i, diff in enumerate(["easy", "medium", "hard"]):
+            total_words = len(words[diff])
+            completed = progress.get(diff, 0)
+            progress_rows.append(f"{diff.capitalize()}: {completed} / {total_words} words completed")
+
+        # Unified scrollable area for progress summary and achievements (centered)
+        list_items = []
+        for text in progress_rows:
+            list_items.append(("progress", text))
+        list_items.append(("spacer", None))
+        for ach in achievements:
+            list_items.append(("achievement", ach))
+
+        ITEM_HEIGHT = 60
+        PROGRESS_HEIGHT = 48
+        SPACER_HEIGHT = 30
+
+        # Calculate full content height
+        content_height = 0
+        for typ, data in list_items:
+            if typ == "spacer":
+                content_height += SPACER_HEIGHT
+            elif typ == "progress":
+                content_height += PROGRESS_HEIGHT
+            else:
+                content_height += ITEM_HEIGHT
+
+        view_height = HEIGHT - top_margin - bottom_margin
+        max_scroll = max(0, content_height - view_height)
+
         draw_gradient_background(screen, WIDTH, HEIGHT, (255, 255, 255), (216, 191, 216))
         draw_text("Achievements / Progress", FONT_LARGE, BLUE, WIDTH // 2, 70)
 
@@ -355,16 +371,17 @@ def achievements_menu():
                 draw_text(data["name"], FONT_SMALL, (128, 0, 128) if data["unlocked"] else (0,0,0), box_rect.centerx, box_rect.top+18, center=True)
                 draw_text(data["desc"], FONT_HINT, (40,40,40), box_rect.centerx, box_rect.top+38, center=True)
                 # --- POPUP AND SOUND TRIGGER ---
-                ach_idx = idx  # index in the list_items, after progress+spacer
-                global_idx = ach_idx  # also corresponds to achievements index (since order matches)
-                if data["unlocked"] and not achievement_fired[global_idx]:
+                ach_name = data["name"]
+                # Only pop up if unlocked, never shown before, and popup not active
+                if data["unlocked"] and not achievement_popped.get(ach_name, False) and not popup_active:
                     popup_active = True
                     popup_message = f"Achievement Unlocked: {data['name']}"
                     popup_time = time.time()
                     if achievement_sound:
                         achievement_sound.stop()
                         achievement_sound.play()
-                    achievement_fired[global_idx] = True
+                    achievement_popped[ach_name] = True
+                    save_achievement_popped(achievement_popped)
                 ay += ITEM_HEIGHT
 
         # --- DRAW THE POPUP ---
@@ -422,6 +439,8 @@ def achievements_menu():
                     running = False
                 elif reset_button.collidepoint(event.pos):
                     reset_progress()
+                    reset_achievement_popped()  # Reset achievement popups
+                    achievement_popped = {}    # Immediately update UI
                 elif mute_button.collidepoint(event.pos):
                     set_bgm_mute(not bgm_muted)
                 if max_scroll > 0:
