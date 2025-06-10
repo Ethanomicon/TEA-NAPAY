@@ -487,18 +487,21 @@ def speak_syllables_medium(word):
         time.sleep(0.3)
 
 def get_phonetic_feedback(target, attempt):
-    # Give local, kid-friendly, phonetic feedback for dyslexia
+    # Always say what the user said, on all levels and all modes
     if not attempt or attempt.strip() == "":
         return "I didn't hear anything. Let's try again together!"
-    elif attempt.lower() == target.lower():
-        return "Awesome! You said it perfectly!"
-    ratio = difflib.SequenceMatcher(None, target.lower(), attempt.lower()).ratio()
-    if ratio > 0.8:
-        return "Great job! That was very close. Try saying each part slowly."
-    elif ratio > 0.5:
-        return "Good try! That was close. Let's listen and try again."
+    ai_say = f"You said {attempt}."
+    if attempt.lower() == target.lower():
+        feedback = "Awesome! You said it perfectly!"
     else:
-        return "I didn't hear anything. Let's try again together!"
+        ratio = difflib.SequenceMatcher(None, target.lower(), attempt.lower()).ratio()
+        if ratio > 0.8:
+            feedback = "Great job! That was very close. Try saying each part slowly."
+        elif ratio > 0.5:
+            feedback = "Good try! That was close. Let's listen and try again."
+        else:
+            feedback = "Let's try again together!"
+    return f"{ai_say} {feedback}"
 
 def syllable_feedback(word):
     # Repeat the word syllable by syllable for practice, using phonetic mapping
