@@ -217,10 +217,16 @@ def achievements_menu():
     mute_button = pygame.Rect(WIDTH - 140, 20, 120, 40)
     FONT_LARGE, FONT_SMALL, FONT_HINT = get_fonts(HEIGHT)
 
+    # --- ACHIEVEMENT SOUND (move global if you want to avoid reload on each call) ---
+    try:
+        achievement_sound = pygame.mixer.Sound('achievement.wav')
+    except pygame.error:
+        achievement_sound = None
+
     attempts_db = load_attempts()
     progress = load_progress()
 
-    # Build achievements
+    # Build achievements list
     achievements = []
     easy_done = progress.get("easy", 0) >= len(words["easy"])
     achievements.append({
@@ -264,14 +270,22 @@ def achievements_menu():
             "unlocked": all_1
         })
 
-    # Progress summary rows
     progress_rows = []
     for i, diff in enumerate(["easy", "medium", "hard"]):
         total_words = len(words[diff])
         completed = progress.get(diff, 0)
         progress_rows.append(f"{diff.capitalize()}: {completed} / {total_words} words completed")
 
-    # Unified scrollable area for progress summary and achievements
+    # Popup state
+    popup_active = False
+    popup_message = ""
+    popup_time = 0
+    POPUP_DURATION = 2.5  # seconds
+
+    # Track previously unlocked achievements
+    already_unlocked = [ach["unlocked"] for ach in achievements]
+
+    # Unified scrollable area for progress summary and achievements (centered)
     list_items = []
     for text in progress_rows:
         list_items.append(("progress", text))
@@ -286,7 +300,6 @@ def achievements_menu():
     bottom_margin = 110
     scrollbar_width = 18
 
-    # Calculate full content height
     content_height = 0
     for typ, data in list_items:
         if typ == "spacer":
@@ -303,12 +316,14 @@ def achievements_menu():
     drag_offset = 0
     clock = pygame.time.Clock()
 
+    # --- Ensure sound is only played once per unlock ---
+    achievement_fired = [False for _ in achievements]
+
     while running:
         clock.tick(60)
         draw_gradient_background(screen, WIDTH, HEIGHT, (255, 255, 255), (216, 191, 216))
         draw_text("Achievements / Progress", FONT_LARGE, BLUE, WIDTH // 2, 70)
 
-        # Centered progress summary and achievement boxes
         y = top_margin - int(scroll_y)
 
         # Progress summary (centered)
@@ -322,26 +337,49 @@ def achievements_menu():
                 draw_text(text, FONT_SMALL, (255,255,255), bar_rect.centerx, bar_rect.centery)
             py += PROGRESS_HEIGHT
 
-        # Achievements (centered)
+        # Achievement boxes (centered)
         ay = y + len(progress_rows) * PROGRESS_HEIGHT + SPACER_HEIGHT
         ach_box_width = int(WIDTH * 0.6)
         ach_x = (WIDTH - ach_box_width) // 2
-
-        for typ, data in list_items[len(progress_rows)+1:]:  # skip progress & spacer
+        for idx, (typ, data) in enumerate(list_items[len(progress_rows)+1:]):
             if typ == "achievement":
                 if ay + ITEM_HEIGHT < top_margin:
                     ay += ITEM_HEIGHT
                     continue
                 if ay > HEIGHT - bottom_margin:
                     break
-                color = (255, 215, 0) if data["unlocked"] else (200, 200, 200)  # YELLOW if unlocked, else gray
+                color = (255, 215, 0) if data["unlocked"] else (200, 200, 200)  # Yellow if unlocked
                 box_rect = pygame.Rect(ach_x, ay, ach_box_width, ITEM_HEIGHT-8)
                 pygame.draw.rect(screen, color, box_rect, border_radius=14)
                 pygame.draw.rect(screen, (128,0,128), box_rect, 2, border_radius=14)
-                # Achievement name and desc centered horizontally in the box
                 draw_text(data["name"], FONT_SMALL, (128, 0, 128) if data["unlocked"] else (0,0,0), box_rect.centerx, box_rect.top+18, center=True)
                 draw_text(data["desc"], FONT_HINT, (40,40,40), box_rect.centerx, box_rect.top+38, center=True)
+                # --- POPUP AND SOUND TRIGGER ---
+                ach_idx = idx  # index in the list_items, after progress+spacer
+                global_idx = ach_idx  # also corresponds to achievements index (since order matches)
+                if data["unlocked"] and not achievement_fired[global_idx]:
+                    popup_active = True
+                    popup_message = f"Achievement Unlocked: {data['name']}"
+                    popup_time = time.time()
+                    if achievement_sound:
+                        achievement_sound.stop()
+                        achievement_sound.play()
+                    achievement_fired[global_idx] = True
                 ay += ITEM_HEIGHT
+
+        # --- DRAW THE POPUP ---
+        if popup_active:
+            elapsed = time.time() - popup_time
+            if elapsed < POPUP_DURATION:
+                popup_width = int(WIDTH * 0.6)
+                popup_height = 60
+                popup_x = (WIDTH - popup_width) // 2
+                popup_y = 15
+                pygame.draw.rect(screen, (255, 215, 0), (popup_x, popup_y, popup_width, popup_height), border_radius=12)
+                pygame.draw.rect(screen, (128, 0, 128), (popup_x, popup_y, popup_width, popup_height), 3, border_radius=12)
+                draw_text(popup_message, FONT_SMALL, (0, 0, 0), WIDTH // 2, popup_y + popup_height // 2, center=True)
+            else:
+                popup_active = False
 
         # Draw scrollbar to the right of the achievement area
         if max_scroll > 0:
@@ -677,6 +715,7 @@ def get_feedback_color(feedback):
         return (255, 69, 0)
     else:
         return (0, 0, 0)
+
 
 def main(difficulty):
     global screen, WIDTH, HEIGHT
