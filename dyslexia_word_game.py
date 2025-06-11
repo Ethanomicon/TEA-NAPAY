@@ -11,6 +11,78 @@ import difflib
 
 pygame.init()
 
+def levenshtein(a, b):
+    """Compute Levenshtein distance between two words."""
+    if len(a) < len(b):
+        return levenshtein(b, a)
+    if len(b) == 0:
+        return len(a)
+    previous_row = list(range(len(b) + 1))
+    for i, c1 in enumerate(a):
+        current_row = [i + 1]
+        for j, c2 in enumerate(b):
+            insertions = previous_row[j + 1] + 1
+            deletions = current_row[j] + 1
+            substitutions = previous_row[j] + (c1 != c2)
+            current_row.append(min(insertions, deletions, substitutions))
+        previous_row = current_row
+    return previous_row[-1]
+
+# Example "training data" (expand this as desired)
+# Each entry: (attempt, correct_word, label)
+ml_training_data = [
+    ("apple", "apple", "correct"),
+    ("aple", "apple", "almost"),
+    ("appl", "apple", "almost"),
+    ("applle", "apple", "almost"),
+    ("appple", "apple", "almost"),
+    ("aplee", "apple", "incorrect"),
+    ("banana", "banana", "correct"),
+    ("bananna", "banana", "almost"),
+    ("banan", "banana", "almost"),
+    ("benana", "banana", "almost"),
+    ("bannana", "banana", "almost"),
+    ("bannanna", "banana", "incorrect"),
+    ("hello", "hello", "correct"),
+    ("helo", "hello", "almost"),
+    ("helllo", "hello", "almost"),
+    ("heloo", "hello", "almost"),
+    ("hallo", "hello", "almost"),
+    ("heallo", "hello", "incorrect"),
+    # Add more as needed for other words
+]
+
+def knn_feedback(user_attempt, correct_word, k=3):
+    # Compute distances only for entries with the same correct_word
+    distances = []
+    for attempt, word, label in ml_training_data:
+        if word == correct_word:
+            dist = levenshtein(user_attempt, attempt)
+            distances.append((dist, label))
+    if not distances:
+        # Fallback: compare user_attempt to correct_word only
+        dist = levenshtein(user_attempt, correct_word)
+        if dist == 0:
+            return "correct"
+        elif dist == 1:
+            return "almost"
+        else:
+            return "incorrect"
+    # Sort and pick k nearest
+    distances.sort()
+    k_nearest = [label for _, label in distances[:k]]
+    # Majority vote
+    return max(set(k_nearest), key=k_nearest.count)
+
+def get_ml_feedback(user_attempt, correct_word):
+    label = knn_feedback(user_attempt, correct_word)
+    if label == "correct":
+        return "Awesome! You said it perfectly!"
+    elif label == "almost":
+        return "Great job! That was very close. Try again!"
+    else:
+        return "Not quite. Listen to the word and try again!"
+
 # --- BACKGROUND MUSIC SETUP ---
 BACKGROUND_MUSIC_FILE = "bgm.ogg"
 bgm_muted = False
@@ -711,7 +783,8 @@ def get_phonetic_feedback(target, attempt):
     elif ratio > 0.5:
         return "Good try! That was close. Let's listen and try again."
     else:
-        return "I didn't hear anything. Let's try again together!"
+        # Changed: Do NOT say "I didn't hear anything" if the user actually said something.
+        return "Let's try again together!"
 
 def syllable_feedback(word):
     sylls = split_syllables(word)
@@ -735,6 +808,16 @@ def get_feedback_color(feedback):
     else:
         return (0, 0, 0)
 
+def ai_assist_say_back(user_speech):
+    """
+    Speak back to the user what was heard.
+    """
+    if user_speech and user_speech.strip() != "":
+        tts_engine.say(f"You said {user_speech}")
+        tts_engine.runAndWait()
+    else:
+        tts_engine.say("I didn't hear anything.")
+        tts_engine.runAndWait()
 
 def main(difficulty):
     global screen, WIDTH, HEIGHT
@@ -773,10 +856,12 @@ def main(difficulty):
     ai_feedback = ""
     ai_feedback_time = 0
     AI_FEEDBACK_DURATION = 8
+    ai_user_said = ""
+    ai_user_said_time = 0
 
     def load_word(index):
         nonlocal correct_word, hint, message, message_color, current_options, option_rects, hint_shown, syllable_hint, attempts, ai_hint_display
-        nonlocal ai_feedback, ai_feedback_time
+        nonlocal ai_feedback, ai_feedback_time, ai_user_said, ai_user_said_time
         current_data = words[difficulty][index]
         correct_word = current_data["word"]
         hint = current_data.get("hint", "")
@@ -788,6 +873,8 @@ def main(difficulty):
         syllable_hint = split_syllables(correct_word)
         ai_feedback = ""
         ai_feedback_time = 0
+        ai_user_said = ""
+        ai_user_said_time = 0
         if difficulty == "easy" or difficulty == "hard":
             current_options = []
             option_rects = []
@@ -854,6 +941,10 @@ def main(difficulty):
                     user_speech = recognize_speech()
                     ai_feedback = get_phonetic_feedback(correct_word, user_speech)
                     ai_feedback_time = time.time()
+                    ai_user_said = user_speech
+                    ai_user_said_time = time.time()
+                    # Speak back what the user said
+                    ai_assist_say_back(user_speech)
                     tts_engine.say(ai_feedback)
                     tts_engine.runAndWait()
                     syllable_feedback(correct_word)
@@ -932,7 +1023,15 @@ def main(difficulty):
             draw_text(f"Syllable/s: {syllable_text}", FONT_HINT, BLACK, WIDTH // 2, HEIGHT - 50)
             if hint:
                 draw_text(f"Hint: {hint}", FONT_HINT, BLACK, WIDTH // 2, HEIGHT - 30)
-        if ai_feedback and (time.time() - ai_feedback_time) < AI_FEEDBACK_DURATION and difficulty == "medium":
+        # --- AI Assist feedback display, applies to all levels ---
+        if ai_user_said and (time.time() - ai_user_said_time < AI_FEEDBACK_DURATION):
+            popup_width = WIDTH - 120
+            popup_height = 40
+            popup_x = 60
+            popup_y = HEIGHT - popup_height - 185
+            pygame.draw.rect(screen, (255, 255, 230), (popup_x, popup_y, popup_width, popup_height))
+            draw_text(f'You said: "{ai_user_said}"', FONT_SMALL, (128, 0, 128), popup_x + 10, popup_y + popup_height // 2, center=False)
+        if ai_feedback and (time.time() - ai_feedback_time) < AI_FEEDBACK_DURATION:
             popup_width = WIDTH - 120
             popup_height = 80
             popup_x = 60
