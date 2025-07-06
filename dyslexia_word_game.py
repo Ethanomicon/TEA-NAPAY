@@ -35,11 +35,11 @@ def bigram_similarity(a, b):
     return len(A & B) / len(A | B) if A | B else 0
 
 def combined_feedback(user, correct):
+    if user == correct:
+        return "correct"
     d = levenshtein(user, correct)
     s = bigram_similarity(user, correct)
-    if d == 0 or s >= 0.9:
-        return "correct"
-    elif d == 1 or s >= 0.7:
+    if d == 1 or s >= 0.7:
         return "almost"
     else:
         return "incorrect"
@@ -348,249 +348,83 @@ def recognize_speech():
             print(f"RequestError: {e}")
             return "Speech service unavailable. Please check your connection."
 
-def achievements_menu():
-    global screen, WIDTH, HEIGHT
-    play_bgm()
+def add_word_menu():
+    global words
+    input_box = pygame.Rect(WIDTH // 2 - 100, HEIGHT // 2, 200, 40)
+    color_inactive = pygame.Color('gray')
+    color_active = pygame.Color('dodgerblue2')
+    color = color_inactive
+    active = False
+    text = ''
     running = True
-    back_button = pygame.Rect(10, 10, 60, 25)
-    reset_button = pygame.Rect(WIDTH // 2 - 60, HEIGHT - 80, 120, 28)
+
+    # Make back button large and consistent
+    back_button_width = 80
+    back_button_height = 40
+    back_button = pygame.Rect(20, 20, back_button_width, back_button_height)
     mute_button = pygame.Rect(WIDTH - 100, 10, 90, 35)
-    FONT_LARGE, FONT_SMALL, FONT_HINT = get_fonts(HEIGHT)
 
-    # --- ACHIEVEMENT SOUND ---
-    try:
-        achievement_sound = pygame.mixer.Sound('achievement.wav')
-    except pygame.error:
-        achievement_sound = None
-
-    # Popup state
-    popup_active = False
-    popup_message = ""
-    popup_time = 0
-    POPUP_DURATION = 2.5  # seconds
-
-    # Load persistent popup "already shown" state
-    achievement_popped = load_achievement_popped()
-
-    scroll_y = 0
-    is_dragging = False
-    drag_offset = 0
-    top_margin = 80
-    bottom_margin = 80
-    scrollbar_width = 18
-
-    clock = pygame.time.Clock()
     while running:
-        clock.tick(60)
-        # Reload progress and attempts every frame to show reset and new unlocks instantly
-        attempts_db = load_attempts()
-        progress = load_progress()
-
-        # Build achievements list fresh
-        achievements = []
-        easy_done = progress.get("easy", 0) >= len(words["easy"])
-        achievements.append({
-            "name": "Easy Peasy",
-            "desc": "Complete all words in Easy level.",
-            "unlocked": easy_done
-        })
-        difficult_done = progress.get("difficult", 0) >= len(words["difficult"])
-        achievements.append({
-            "name": "Diffi-cool",
-            "desc": "Complete all words in Difficult level.",
-            "unlocked": difficult_done
-        })
-        has_5_attempts = any(
-            count >= 5 for diff in attempts_db for count in attempts_db[diff].values()
-        )
-        achievements.append({
-            "name": "Practice Makes Perfect",
-            "desc": "Get at least 5 attempts on a word.",
-            "unlocked": has_5_attempts
-        })
-        has_10_attempts = any(
-            count >= 10 for diff in attempts_db for count in attempts_db[diff].values()
-        )
-        achievements.append({
-            "name": "Trial And Error",
-            "desc": "Get at least 10 attempts on a word.",
-            "unlocked": has_10_attempts
-        })
-        for diff in ["easy", "difficult"]:
-            all_1 = all(attempts_db.get(diff, {}).get(word_data["word"], 0) == 1 for word_data in words[diff])
-            achievements.append({
-                "name": f"Excellent User ({diff.title()})",
-                "desc": f"Finish all words in the {diff.title()} level with only 1 attempt per word.",
-                "unlocked": all_1
-            })
-        # Progress summary rows
-        progress_rows = []
-        for i, diff in enumerate(["easy", "difficult"]):
-            total_words = len(words[diff])
-            completed = progress.get(diff, 0)
-            progress_rows.append(f"{diff.capitalize()}: {completed} / {total_words} words completed")
-
-        # Unified scrollable area for progress summary and achievements (centered)
-        list_items = []
-        for text in progress_rows:
-            list_items.append(("progress", text))
-        list_items.append(("spacer", None))
-        for ach in achievements:
-            list_items.append(("achievement", ach))
-
-        ITEM_HEIGHT = 60
-        PROGRESS_HEIGHT = 48
-        SPACER_HEIGHT = 30
-
-        # Calculate full content height
-        content_height = 0
-        for typ, data in list_items:
-            if typ == "spacer":
-                content_height += SPACER_HEIGHT
-            elif typ == "progress":
-                content_height += PROGRESS_HEIGHT
-            else:
-                content_height += ITEM_HEIGHT
-
-        view_height = HEIGHT - top_margin - bottom_margin
-        max_scroll = max(0, content_height - view_height)
-
-        draw_gradient_background(screen, WIDTH, HEIGHT, (255, 255, 255), (216, 191, 216))
-        draw_text("Achievements / Progress", FONT_LARGE, BLUE, WIDTH // 2, 50)
-
-        y = top_margin - int(scroll_y)
-
-        # Progress summary (centered)
-        progress_width = int(WIDTH * 0.6)
-        progress_x = (WIDTH - progress_width) // 2
-        py = y
-        for i, text in enumerate(progress_rows):
-            if py + PROGRESS_HEIGHT > top_margin and py < HEIGHT - bottom_margin:
-                bar_rect = pygame.Rect(progress_x, py, progress_width, PROGRESS_HEIGHT - 8)
-                pygame.draw.rect(screen, (100, 149, 237), bar_rect, border_radius=12)
-                draw_text(text, FONT_SMALL, (255,255,255), bar_rect.centerx, bar_rect.centery)
-            py += PROGRESS_HEIGHT
-
-        # Achievement boxes (centered)
-        ay = y + len(progress_rows) * PROGRESS_HEIGHT + SPACER_HEIGHT
-        ach_box_width = int(WIDTH * 0.6)
-        ach_x = (WIDTH - ach_box_width) // 2
-        for idx, (typ, data) in enumerate(list_items[len(progress_rows)+1:]):
-            if typ == "achievement":
-                if ay + ITEM_HEIGHT < top_margin:
-                    ay += ITEM_HEIGHT
-                    continue
-                if ay > HEIGHT - bottom_margin:
-                    break
-                color = (255, 215, 0) if data["unlocked"] else (200, 200, 200)  # Yellow if unlocked
-                box_rect = pygame.Rect(ach_x, ay, ach_box_width, ITEM_HEIGHT-8)
-                pygame.draw.rect(screen, color, box_rect, border_radius=14)
-                pygame.draw.rect(screen, (128,0,128), box_rect, 2, border_radius=14)
-                draw_text(data["name"], FONT_SMALL, (128, 0, 128) if data["unlocked"] else (0,0,0), box_rect.centerx, box_rect.top+18, center=True)
-                draw_text(data["desc"], FONT_HINT, (40,40,40), box_rect.centerx, box_rect.top+38, center=True)
-                # --- POPUP AND SOUND TRIGGER ---
-                ach_name = data["name"]
-                # Only pop up if unlocked, never shown before, and popup not active
-                if data["unlocked"] and not achievement_popped.get(ach_name, False) and not popup_active:
-                    popup_active = True
-                    popup_message = f"Achievement Unlocked: {data['name']}"
-                    popup_time = time.time()
-                    if achievement_sound:
-                        achievement_sound.stop()
-                        achievement_sound.play()
-                    achievement_popped[ach_name] = True
-                    save_achievement_popped(achievement_popped)
-                ay += ITEM_HEIGHT
-
-        # --- DRAW THE POPUP ---
-        if popup_active:
-            elapsed = time.time() - popup_time
-            if elapsed < POPUP_DURATION:
-                popup_width = int(WIDTH * 0.6)
-                popup_height = 60
-                popup_x = (WIDTH - popup_width) // 2
-                popup_y = 15
-                pygame.draw.rect(screen, (255, 215, 0), (popup_x, popup_y, popup_width, popup_height), border_radius=12)
-                pygame.draw.rect(screen, (128, 0, 128), (popup_x, popup_y, popup_width, popup_height), 3, border_radius=12)
-                draw_text(popup_message, FONT_SMALL, (0, 0, 0), WIDTH // 2, popup_y + popup_height // 2, center=True)
-            else:
-                popup_active = False
-
-        # Draw scrollbar to the right of the achievement area
-        if max_scroll > 0:
-            sb_area = HEIGHT - top_margin - bottom_margin
-            bar_height = max(40, int(sb_area * sb_area / content_height))
-            sb_track_height = sb_area - bar_height
-            if sb_track_height > 0:
-                bar_top = top_margin + int((scroll_y / max_scroll) * sb_track_height)
-            else:
-                bar_top = top_margin
-            sb_x = ach_x + ach_box_width + 10
-            pygame.draw.rect(screen, (200,200,200), (sb_x, top_margin, scrollbar_width, sb_area), 0, border_radius=8)
-            pygame.draw.rect(screen, (128,0,128), (sb_x, bar_top, scrollbar_width, bar_height), 0, border_radius=8)
-
-        # UI Buttons
-        pygame.draw.rect(screen, (200,200,200), back_button)
-        draw_text("Back", FONT_SMALL, (0,0,0), back_button.centerx, back_button.centery)
-        pygame.draw.rect(screen, (255,69,0), reset_button)
-        draw_text("Reset Progress", FONT_SMALL, (255,255,255), reset_button.centerx, reset_button.centery)
-        pygame.draw.rect(screen, (100,149,237) if not bgm_muted else (200,200,200), mute_button)
-        draw_text("Mute" if not bgm_muted else "Unmute", FONT_SMALL, (255,255,255), mute_button.centerx, mute_button.centery)
-        pygame.display.flip()
-
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 pygame.quit()
-                exit()
-            elif event.type == pygame.VIDEORESIZE:
-                WIDTH, HEIGHT = event.w, event.h
-                screen = pygame.display.set_mode((WIDTH, HEIGHT), pygame.RESIZABLE)
-                reset_button.x = WIDTH // 2 - 100
-                reset_button.y = HEIGHT - 100
-                mute_button.x = WIDTH - 140
-                FONT_LARGE, FONT_SMALL, FONT_HINT = get_fonts(HEIGHT)
-                view_height = HEIGHT - top_margin - bottom_margin
-                max_scroll = max(0, content_height - view_height)
-                scroll_y = min(scroll_y, max_scroll)
+                sys.exit()
             elif event.type == pygame.MOUSEBUTTONDOWN:
+                if input_box.collidepoint(event.pos):
+                    active = True
+                    color = color_active
+                else:
+                    active = False
+                    color = color_inactive
                 if back_button.collidepoint(event.pos):
                     running = False
-                elif reset_button.collidepoint(event.pos):
-                    reset_progress()
-                    reset_achievement_popped()  # Reset achievement popups
-                    achievement_popped = {}    # Immediately update UI
-                elif mute_button.collidepoint(event.pos):
-                    set_bgm_mute(not bgm_muted)
-                if max_scroll > 0:
-                    ach_box_width = int(WIDTH * 0.6)
-                    ach_x = (WIDTH - ach_box_width) // 2
-                    sb_area = HEIGHT - top_margin - bottom_margin
-                    bar_height = max(40, int(sb_area * sb_area / content_height))
-                    sb_track_height = sb_area - bar_height
-                    if sb_track_height > 0:
-                        bar_top = top_margin + int((scroll_y / max_scroll) * sb_track_height)
-                    else:
-                        bar_top = top_margin
-                    sb_x = ach_x + ach_box_width + 10
-                    scrollbar_rect = pygame.Rect(sb_x, bar_top, scrollbar_width, bar_height)
-                    if scrollbar_rect.collidepoint(event.pos):
-                        is_dragging = True
-                        drag_offset = event.pos[1] - bar_top
-            elif event.type == pygame.MOUSEBUTTONUP:
-                is_dragging = False
-            elif event.type == pygame.MOUSEMOTION:
-                if is_dragging and max_scroll > 0:
-                    sb_area = HEIGHT - top_margin - bottom_margin
-                    bar_height = max(40, int(sb_area * sb_area / content_height))
-                    sb_track_height = sb_area - bar_height
-                    mouse_y = event.pos[1]
-                    drag_y = mouse_y - drag_offset
-                    drag_y = max(top_margin, min(drag_y, top_margin + sb_track_height))
-                    percent = 0 if sb_track_height == 0 else (drag_y - top_margin) / sb_track_height
-                    scroll_y = percent * max_scroll
-            elif event.type == pygame.MOUSEWHEEL:
-                scroll_y -= event.y * 40
-                scroll_y = max(0, min(scroll_y, max_scroll))
+            elif event.type == pygame.KEYDOWN and active:
+                if event.key == pygame.K_RETURN:
+                    word = text.strip().lower()
+                    if word and word not in [w["word"] for w in words["easy"]] and word not in [w["word"] for w in words["difficult"]]:
+                        sylls = split_syllables(word)
+                        diff = "easy" if len(sylls) <= 2 else "difficult"
+                        words[diff].append({"word": word})
+                        # Save to words.json for persistence
+                        with open("words.json", "w") as f:
+                            json.dump(words, f, indent=2)
+                        # Update attempts/progress for the new word:
+                        attempts = load_attempts()
+                        attempts[diff][word] = 0
+                        save_attempts(attempts)
+                        prog = load_progress()
+                        prog.setdefault(diff, 0)
+                        save_progress(prog)
+                        text = ''
+                        running = False
+                elif event.key == pygame.K_BACKSPACE:
+                    text = text[:-1]
+                else:
+                    text += event.unicode
+
+        draw_gradient_background(screen, WIDTH, HEIGHT, (255,255,255), (216,191,216))
+        FONT_LARGE, FONT_SMALL, _ = get_fonts(HEIGHT)
+        draw_text("Add a new word:", FONT_LARGE, (30,50,200), WIDTH // 2, HEIGHT // 2 - 60)
+        pygame.draw.rect(screen, color, input_box, 2)
+        txt_surface = FONT_LARGE.render(text, True, (0,0,0))
+        screen.blit(txt_surface, (input_box.x+5, input_box.y+5))
+        draw_text("Press ENTER to add", FONT_SMALL, (60,60,60), WIDTH // 2, HEIGHT // 2 + 50)
+
+        # Draw Back Button (upper left)
+        pygame.draw.rect(screen, (128, 43, 226), back_button, border_radius=8)
+        draw_text("Back", FONT_LARGE, (255,255,255), back_button.centerx, back_button.centery)
+
+        if bgm_muted:
+            mute_color = (200, 60, 60)  # Red when muted
+        else:
+            mute_color = (60, 179, 113)  # Green when unmuted
+
+        pygame.draw.rect(screen, mute_color, mute_button, border_radius=8)
+        draw_text("Mute" if not bgm_muted else "Unmute", FONT_LARGE, (255, 255, 255), mute_button.centerx,
+                  mute_button.centery)
+
+        pygame.display.flip()
+
 
 def database_menu():
     global screen, WIDTH, HEIGHT
@@ -613,12 +447,19 @@ def database_menu():
         draw_gradient_background(screen, WIDTH, HEIGHT, (255, 255, 255), (216, 191, 216))
         draw_text("Attempts Database", FONT_LARGE, PURPLE, WIDTH // 2, HEIGHT // 12)
 
-        pygame.draw.rect(screen, GRAY, back_button)
-        draw_text("Back", FONT_SMALL, BLACK, back_button.centerx, back_button.centery)
+        # Draw Back Button (upper left)
+        pygame.draw.rect(screen, (128, 43, 226), back_button, border_radius=8)
+        draw_text("Back", FONT_LARGE, (255,255,255), back_button.centerx, back_button.centery)
         pygame.draw.rect(screen, RED, reset_button)
         draw_text("Reset Attempts", FONT_SMALL, WHITE, reset_button.centerx, reset_button.centery)
-        pygame.draw.rect(screen, BLUE if not bgm_muted else GRAY, mute_button)
-        draw_text("Mute" if not bgm_muted else "Unmute", FONT_SMALL, WHITE, mute_button.centerx, mute_button.centery)
+        if bgm_muted:
+            mute_color = (200, 60, 60)  # Red when muted
+        else:
+            mute_color = (60, 179, 113)  # Green when unmuted
+
+        pygame.draw.rect(screen, mute_color, mute_button, border_radius=8)
+        draw_text("Mute" if not bgm_muted else "Unmute", FONT_LARGE, (255, 255, 255), mute_button.centerx,
+                  mute_button.centery)
 
         col_width = WIDTH // 3
         header_y = HEIGHT // 8 + 30
@@ -744,7 +585,7 @@ def menu():
         button_x = WIDTH // 2 - button_width // 2
 
         start_btn = pygame.Rect(button_x, 80, button_width, button_height)
-        achievements_btn = pygame.Rect(button_x, 130, button_width, button_height)
+        add_word_btn = pygame.Rect(button_x, 130, button_width, button_height)
         database_btn = pygame.Rect(button_x, 180, button_width, button_height)
         quit_btn = pygame.Rect(button_x, 230, button_width, button_height)
         mute_button = pygame.Rect(WIDTH - 100, 10, 90, 35)
@@ -753,8 +594,8 @@ def menu():
         pygame.draw.rect(screen, (60, 179, 113), start_btn)
         draw_button_text("Start", FONT_LARGE, WHITE, start_btn)
 
-        pygame.draw.rect(screen, (70, 130, 180), achievements_btn)
-        draw_button_text("Achievements", FONT_LARGE, WHITE, achievements_btn)
+        pygame.draw.rect(screen, (70, 130, 180), add_word_btn)
+        draw_button_text("Add Word", FONT_LARGE, WHITE, add_word_btn)
 
         pygame.draw.rect(screen, (255, 165, 0), database_btn)
         draw_button_text("Database", FONT_LARGE, WHITE, database_btn)
@@ -762,8 +603,19 @@ def menu():
         pygame.draw.rect(screen, (138, 43, 226), quit_btn)
         draw_button_text("Quit", FONT_LARGE, WHITE, quit_btn)
 
-        pygame.draw.rect(screen, (192, 192, 192), mute_button)
-        draw_button_text("Mute" if not bgm_muted else "Unmute", FONT_LARGE, BLACK, mute_button)
+        if bgm_muted:
+            mute_color = (200, 60, 60)  # Red when muted
+        else:
+            mute_color = (60, 179, 113)  # Green when unmuted
+
+        if bgm_muted:
+            mute_color = (200, 60, 60)  # Red when muted
+        else:
+            mute_color = (60, 179, 113)  # Green when unmuted
+
+        pygame.draw.rect(screen, mute_color, mute_button, border_radius=8)
+        draw_text("Mute" if not bgm_muted else "Unmute", FONT_LARGE, (255, 255, 255), mute_button.centerx,
+                  mute_button.centery)
 
         draw_text("Group 6 - Alpha Version 2025", FONT_LARGE, BLACK, WIDTH // 2, HEIGHT - 18)
 
@@ -776,8 +628,8 @@ def menu():
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 if start_btn.collidepoint(event.pos):
                     difficulty_menu()
-                elif achievements_btn.collidepoint(event.pos):
-                    achievements_menu()
+                elif add_word_btn.collidepoint(event.pos):
+                        add_word_menu()
                 elif database_btn.collidepoint(event.pos):
                     database_menu()
                 elif quit_btn.collidepoint(event.pos):
@@ -790,26 +642,24 @@ def menu():
                 screen = pygame.display.set_mode((WIDTH, HEIGHT))
                 mute_button = pygame.Rect(WIDTH - 100, 10, 90, 35)  # re-position after resize
 
-
 def difficulty_menu():
     global screen, WIDTH, HEIGHT
     play_bgm()
     running = True
 
-    # Smaller buttons for 3.5" screen
-    back_button = pygame.Rect(10, 10, 60, 25)
+    # Make back button large and consistent
+    back_button_width = 80
+    back_button_height = 40
+    back_button = pygame.Rect(20, 20, back_button_width, back_button_height)
     mute_button = pygame.Rect(WIDTH - 100, 10, 90, 35)
 
-    # Use fixed small fonts
     FONT_LARGE = pygame.font.Font(None, 26)
     FONT_SMALL = pygame.font.Font(None, 14)
 
-    # Button size
     btn_w = 180
     btn_h = 60
     btn_x = WIDTH // 2 - btn_w // 2
 
-    # Positioned vertically with smaller spacing
     easy_btn = pygame.Rect(btn_x, 80, btn_w, btn_h)
     difficult_btn = pygame.Rect(btn_x, 150, btn_w, btn_h)
 
@@ -817,20 +667,29 @@ def difficulty_menu():
         draw_gradient_background(screen, WIDTH, HEIGHT, (255, 255, 255), (216, 191, 216))
         draw_text("Choose Difficulty", FONT_LARGE, BLUE, WIDTH // 2, 35)
 
-        # Draw difficulty buttons
         pygame.draw.rect(screen, GREEN, easy_btn)
         draw_text("Easy", FONT_LARGE, WHITE, easy_btn.centerx, easy_btn.centery)
 
         pygame.draw.rect(screen, RED, difficult_btn)
         draw_text("Difficult", FONT_LARGE, WHITE, difficult_btn.centerx, difficult_btn.centery)
 
-        # Draw UI buttons
-        pygame.draw.rect(screen, GRAY, back_button)
-        draw_text("Back", FONT_LARGE, BLACK, back_button.centerx, back_button.centery)
+        # Draw large back button at upper left
+        pygame.draw.rect(screen, (128, 43, 226), back_button, border_radius=8)
+        draw_text("Back", FONT_LARGE, WHITE, back_button.centerx, back_button.centery)
 
-        pygame.draw.rect(screen, (105, 105, 105), mute_button)
-        draw_text("Mute" if not bgm_muted else "Unmute", FONT_LARGE, BLACK, mute_button.centerx, mute_button.centery)
+        if bgm_muted:
+            mute_color = (200, 60, 60)  # Red when muted
+        else:
+            mute_color = (60, 179, 113)  # Green when unmuted
 
+        if bgm_muted:
+            mute_color = (200, 60, 60)  # Red when muted
+        else:
+            mute_color = (60, 179, 113)  # Green when unmuted
+
+        pygame.draw.rect(screen, mute_color, mute_button, border_radius=8)
+        draw_text("Mute" if not bgm_muted else "Unmute", FONT_LARGE, (255, 255, 255), mute_button.centerx,
+                  mute_button.centery)
 
         pygame.display.flip()
 
@@ -854,6 +713,7 @@ def difficulty_menu():
                 WIDTH, HEIGHT = event.w, event.h
                 screen = pygame.display.set_mode((WIDTH, HEIGHT))
                 mute_button.x = WIDTH - 80
+                # Update back button if you want it to scale/relocate on resize
 
 
 def split_syllables(word):
@@ -1055,6 +915,11 @@ def main(difficulty):
     help_button = pygame.Rect(WIDTH - 80, 75, 70, 22)
     ai_button = pygame.Rect(WIDTH - 80, 110, 70, 22)
 
+    # Make back button large and consistent
+    back_button_width = 80
+    back_button_height = 40
+    back_button = pygame.Rect(20, 20, back_button_width, back_button_height)
+    mute_button = pygame.Rect(WIDTH - 100, 10, 90, 35)
 
     use_mic = (difficulty == "easy" or difficulty == "difficult")
     if use_mic:
@@ -1183,7 +1048,6 @@ def main(difficulty):
 
                                         draw_gradient_background(screen, WIDTH, HEIGHT, (255, 255, 255),
                                                                  (216, 191, 216))
-
                                         draw_text("Having trouble with this word?", popup_font, RED, WIDTH // 2,
                                                   HEIGHT // 2 - 40)
                                         draw_text(popup_message, popup_font, BLACK, WIDTH // 2, HEIGHT // 2 - 10)
@@ -1197,6 +1061,56 @@ def main(difficulty):
 
                                         pygame.draw.rect(screen, (255, 140, 0), skip_button)
                                         draw_text("Try another word", popup_font, WHITE, skip_button.centerx,
+                                                  skip_button.centery)
+
+                                        pygame.display.flip()
+
+                                    if not stay_on_word:
+                                        # Find the index of the suggested word
+                                        for idx, w in enumerate(words[difficulty]):
+                                            if w["word"].lower() == suggested_word.lower():
+                                                current_word_index = idx
+                                                break
+                                        progress[difficulty] = max(progress.get(difficulty, 0), current_word_index)
+                                        save_progress(progress)
+                                        current_options, option_rects = load_word(current_word_index)
+
+                                    # Define button positions
+                                    btn_width = 160
+                                    btn_height = 40
+                                    stay_button = pygame.Rect(WIDTH // 2 - btn_width - 10, HEIGHT // 2 + 40, btn_width,
+                                                              btn_height)
+                                    skip_button = pygame.Rect(WIDTH // 2 + 10, HEIGHT // 2 + 40, btn_width, btn_height)
+
+                                    while not decision_made:
+                                        for event in pygame.event.get():
+                                            if event.type == pygame.QUIT:
+                                                pygame.quit()
+                                                sys.exit()
+                                            elif event.type == pygame.MOUSEBUTTONDOWN:
+                                                if stay_button.collidepoint(event.pos):
+                                                    decision_made = True
+                                                    stay_on_word = True
+                                                elif skip_button.collidepoint(event.pos):
+                                                    decision_made = True
+                                                    stay_on_word = False
+
+                                        draw_gradient_background(screen, WIDTH, HEIGHT, (255, 255, 255),
+                                                                 (216, 191, 216))
+
+                                        draw_text("Having trouble with this word?", popup_font, RED, WIDTH // 2,
+                                                  HEIGHT // 2 - 40)
+                                        draw_text(popup_message, popup_font, BLACK, WIDTH // 2, HEIGHT // 2 - 10)
+                                        draw_text("Choose an option below:", popup_font, PURPLE, WIDTH // 2,
+                                                  HEIGHT // 2 + 15)
+
+                                        # Draw buttons
+                                        pygame.draw.rect(screen, (34, 139, 34), stay_button)
+                                        draw_text("Stay on this word", popup_font, WHITE, stay_button.centerx,
+                                                  stay_button.centery)
+
+                                        pygame.draw.rect(screen, (255, 140, 0), skip_button)
+                                        draw_text("Try suggested word", popup_font, WHITE, skip_button.centerx,
                                                   skip_button.centery)
 
                                         pygame.display.flip()
@@ -1241,8 +1155,8 @@ def main(difficulty):
         draw_gradient_background(screen, WIDTH, HEIGHT, (255, 255, 255), (216, 191, 216))
         FONT_LARGE, FONT_SMALL, FONT_HINT = get_fonts(HEIGHT)
         draw_text(f"Difficulty: {difficulty.capitalize()}", FONT_SMALL, BLACK, WIDTH // 2, 40)
-        pygame.draw.rect(screen, GRAY, back_button)
-        draw_text("Back", FONT_SMALL, BLACK, back_button.centerx, back_button.centery)
+        pygame.draw.rect(screen, (128, 43, 226), back_button, border_radius=8)
+        draw_text("Back", FONT_LARGE, (255, 255, 255), back_button.centerx, back_button.centery)
         if difficulty == "easy" or difficulty == "difficult":
             draw_text("Say it correctly. Press Mic to start:", FONT_SMALL, BLACK, WIDTH // 2, HEIGHT // 5)
         else:
